@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Architech Agent</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #202124;
+        background: #f5f6f8;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #f5f6f8;
+      }
+
+      main {
+        box-sizing: border-box;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 12px;
+        width: min(620px, 100vw);
+        height: 100vh;
+        margin: 0 auto;
+        padding: 16px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 650;
+      }
+
+      .status {
+        max-width: 260px;
+        color: #6f7782;
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .thread {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 0;
+        overflow: auto;
+        padding: 2px 2px 10px;
+      }
+
+      .message {
+        max-width: 86%;
+        border: 1px solid #d8dde6;
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: #ffffff;
+        font-size: 13px;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+
+      .message.user {
+        align-self: flex-end;
+        border-color: #b9c8e8;
+        background: #eef4ff;
+      }
+
+      .message.agent {
+        align-self: flex-start;
+      }
+
+      .message.pending {
+        color: #6f7782;
+      }
+
+      .hint {
+        margin-top: 10px;
+        color: #6f7782;
+        font-size: 12px;
+      }
+
+      .timestamp {
+        display: block;
+        margin-top: 6px;
+        color: #8a929c;
+        font-size: 11px;
+      }
+
+      .choice-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .choice-row button {
+        border: 1px solid #c8ced8;
+        border-radius: 999px;
+        padding: 6px 10px;
+        background: #ffffff;
+        color: #202124;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .choice-row button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+
+      .artifact-grid {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .artifact {
+        display: grid;
+        grid-template-columns: 84px minmax(0, 1fr);
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid #edf0f4;
+        border-radius: 6px;
+        background: #fafbfc;
+        font-size: 12px;
+      }
+
+      .artifact strong {
+        color: #4d535b;
+        font-weight: 650;
+      }
+
+      .artifact span {
+        color: #6f7782;
+      }
+
+      .preview-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .preview-grid img {
+        display: block;
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        object-fit: contain;
+        border: 1px solid #d8dde6;
+        border-radius: 6px;
+        background: #f0f2f5;
+      }
+
+      .composer {
+        border: 1px solid #d8dde6;
+        border-radius: 8px;
+        background: #ffffff;
+        padding: 10px;
+      }
+
+      textarea {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 74px;
+        max-height: 160px;
+        border: 0;
+        outline: 0;
+        resize: vertical;
+        font: inherit;
+        line-height: 1.45;
+        color: #202124;
+        background: transparent;
+      }
+
+      .composer-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        border-top: 1px solid #edf0f4;
+        padding-top: 8px;
+        margin-top: 8px;
+        color: #6f7782;
+        font-size: 12px;
+      }
+
+      select {
+        min-width: 0;
+        max-width: 260px;
+        border: 1px solid #c8ced8;
+        border-radius: 6px;
+        padding: 6px 8px;
+        font: inherit;
+        color: #202124;
+        background: #ffffff;
+      }
+
+      pre {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Architech Agent</h1>
+        <div id="status" class="status">Ready.</div>
+      </header>
+
+      <section id="thread" class="thread" aria-live="polite"></section>
+
+      <section class="composer">
+        <textarea id="prompt" placeholder="Ask Architech to render this view and create a point cloud..."></textarea>
+        <div class="composer-meta">
+          <select id="style"></select>
+          <span>Cmd+Enter</span>
+        </div>
+      </section>
+
+      <pre id="result"></pre>
+    </main>
+
+    <script>
+      const thread = document.getElementById("thread");
+      const style = document.getElementById("style");
+      const promptInput = document.getElementById("prompt");
+      const statusOutput = document.getElementById("status");
+      const resultOutput = document.getElementById("result");
+      let isRunning = false;
+      let pendingMessage = null;
+      let lastPng = null;
+      let lastPointCloud = null;
+      let pointCloudImportCapability = {
+        supported: false,
+        message: "SketchUp point-cloud import support was not detected."
+      };
+      const editIntentPattern = /\b(edit|change|adjust|revise|update|warmer|cooler|brighter|darker|lighting|light|color|material|replace)\b/i;
+
+      function setStatus(message) {
+        statusOutput.textContent = message;
+      }
+
+      function setResult(value) {
+        resultOutput.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+      }
+
+      function scrollThread() {
+        thread.scrollTop = thread.scrollHeight;
+      }
+
+      function appendMessage(role, text, className = "") {
+        const message = document.createElement("article");
+        message.className = `message ${role} ${className}`.trim();
+        message.append(document.createTextNode(text));
+        appendTimestamp(message);
+        thread.appendChild(message);
+        scrollThread();
+        return message;
+      }
+
+      function appendTimestamp(element, timestamp = null) {
+        const time = document.createElement("time");
+        time.className = "timestamp";
+        const date = timestamp ? new Date(timestamp) : new Date();
+        time.dateTime = date.toISOString();
+        time.textContent = date.toLocaleString();
+        element.appendChild(time);
+      }
+
+      function artifactCard(label, value) {
+        const row = document.createElement("div");
+        row.className = "artifact";
+        const title = document.createElement("strong");
+        title.textContent = label;
+        const content = document.createElement("span");
+        content.textContent = value || "None";
+        row.append(title, content);
+        return row;
+      }
+
+      function previewImage(url, alt) {
+        if (!url) return null;
+        const image = document.createElement("img");
+        image.src = `${url}?t=${Date.now()}`;
+        image.alt = alt;
+        return image;
+      }
+
+      function appendAgentResult(payload) {
+        const png = payload.png || {};
+        const pointCloud = payload.point_cloud || {};
+        const message = document.createElement("article");
+        message.className = "message agent";
+        message.append(document.createTextNode(
+          payload.status === "success"
+            ? "Done. I generated the render and point cloud."
+            : (payload.error_message || "I need more information before I can generate an image.")
+        ));
+        appendTimestamp(message, payload.completed_at || payload.started_at);
+
+        if (payload.status === "success") {
+          lastPng = png;
+          lastPointCloud = pointCloud;
+          const artifacts = document.createElement("div");
+          artifacts.className = "artifact-grid";
+          artifacts.append(
+            artifactCard("Render", png.output_image_path || png.local_output_image_path),
+            artifactCard("Point Cloud", pointCloud.pointcloud_path || pointCloud.local_pointcloud_path)
+          );
+          message.appendChild(artifacts);
+          appendPointCloudImportNote(message, pointCloud);
+          message.appendChild(importChoices(png, pointCloud));
+        }
+
+        const renderPreview = previewImage(png.render_preview_url, "Generated render preview");
+        const depthPreview = previewImage(pointCloud.pointcloud_preview_url, "Generated depth preview");
+        if (renderPreview || depthPreview) {
+          const previews = document.createElement("div");
+          previews.className = "preview-grid";
+          if (renderPreview) previews.appendChild(renderPreview);
+          if (depthPreview) previews.appendChild(depthPreview);
+          message.appendChild(previews);
+        }
+
+        thread.appendChild(message);
+        scrollThread();
+      }
+
+      function appendEditResult(payload) {
+        const message = document.createElement("article");
+        message.className = "message agent";
+        message.append(document.createTextNode(
+          payload.status === "success"
+            ? "Done. I edited the latest render."
+            : (payload.error_message || "I could not edit the latest render.")
+        ));
+        appendTimestamp(message);
+
+        if (payload.status === "success") {
+          const png = {
+            output_image_path: payload.output_image_path,
+            local_output_image_path: payload.local_output_image_path,
+            render_preview_url: payload.render_preview_url
+          };
+          lastPng = png;
+          lastPointCloud = null;
+
+          const artifacts = document.createElement("div");
+          artifacts.className = "artifact-grid";
+          artifacts.append(artifactCard("Render", png.output_image_path || png.local_output_image_path));
+          message.appendChild(artifacts);
+
+          const choices = document.createElement("div");
+          choices.className = "choice-row";
+          choices.append(
+            choiceButton("Import PNG", () => importPng(png)),
+            choiceButton("Generate PLY", () => generatePointCloud(png))
+          );
+          message.appendChild(choices);
+
+          const renderPreview = previewImage(png.render_preview_url, "Edited render preview");
+          if (renderPreview) {
+            const previews = document.createElement("div");
+            previews.className = "preview-grid";
+            previews.appendChild(renderPreview);
+            message.appendChild(previews);
+          }
+        }
+
+        thread.appendChild(message);
+        scrollThread();
+      }
+
+      function importChoices(png, pointCloud) {
+        const choices = document.createElement("div");
+        choices.className = "choice-row";
+        choices.append(choiceButton("Import PNG", () => importPng(png)));
+        appendPointCloudChoices(choices, pointCloud);
+        return choices;
+      }
+
+      function appendPointCloudChoices(choices, pointCloud) {
+        if (!pointCloud || !pointCloud.pointcloud_path) return;
+
+        choices.append(choiceButton(revealPointCloudLabel(pointCloud), () => revealPointCloud(pointCloud), { disableSiblings: false }));
+        if (canImportPointCloud(pointCloud)) {
+          choices.append(choiceButton(importPointCloudLabel(pointCloud), () => importPointCloud(pointCloud)));
+        }
+      }
+
+      function appendPointCloudImportNote(message, pointCloud) {
+        if (!pointCloud || !pointCloud.pointcloud_path || canImportPointCloud(pointCloud)) return;
+
+        const note = document.createElement("div");
+        note.className = "hint";
+        note.textContent = `${pointCloudImportCapability.message} Use ${revealPointCloudLabel(pointCloud)} and import manually through Scan Essentials.`;
+        message.appendChild(note);
+      }
+
+      function pointCloudFormat(pointCloud) {
+        if (pointCloud && pointCloud.output_format) return pointCloud.output_format.toUpperCase();
+        const path = (pointCloud && pointCloud.pointcloud_path ? pointCloud.pointcloud_path : "").toLowerCase();
+        if (path.endsWith(".obj")) return "OBJ";
+        if (path.endsWith(".ply")) return "PLY";
+        if (path.endsWith(".las")) return "LAS";
+        if (path.endsWith(".laz")) return "LAZ";
+        return "Point Cloud";
+      }
+
+      function canImportPointCloud(pointCloud) {
+        return pointCloudFormat(pointCloud) === "OBJ" || pointCloudImportCapability.supported;
+      }
+
+      function revealPointCloudLabel(pointCloud) {
+        return `Reveal ${pointCloudFormat(pointCloud)}`;
+      }
+
+      function importPointCloudLabel(pointCloud) {
+        return `Import ${pointCloudFormat(pointCloud)}`;
+      }
+
+      function choiceButton(label, onClick, options = {}) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        button.addEventListener("click", () => {
+          if (options.disableSiblings !== false) {
+            disableChoiceButtons(button.parentElement);
+          }
+          onClick();
+        });
+        return button;
+      }
+
+      function disableChoiceButtons(container) {
+        if (!container) return;
+        container.querySelectorAll("button").forEach((button) => {
+          button.disabled = true;
+        });
+      }
+
+      function importPng(png) {
+        const outputImagePath = png.output_image_path;
+        if (!outputImagePath) {
+          appendMessage("agent", "I do not have a PNG artifact to import.");
+          return;
+        }
+        setStatus("Importing PNG...");
+        sketchup.import_render(JSON.stringify({ output_image_path: outputImagePath }));
+      }
+
+      function importPointCloud(pointCloud) {
+        const pointcloudPath = pointCloud.pointcloud_path;
+        if (!pointcloudPath) {
+          appendMessage("agent", "I do not have a point-cloud artifact to import.");
+          return;
+        }
+        setStatus(`Importing ${pointCloudFormat(pointCloud)}...`);
+        sketchup.import_point_cloud(JSON.stringify({ pointcloud_path: pointcloudPath }));
+      }
+
+      function revealPointCloud(pointCloud) {
+        const pointcloudPath = pointCloud.pointcloud_path;
+        if (!pointcloudPath) {
+          appendMessage("agent", "I do not have a point-cloud artifact to reveal.");
+          return;
+        }
+        setStatus(`Revealing ${pointCloudFormat(pointCloud)}...`);
+        sketchup.reveal_point_cloud(JSON.stringify({ pointcloud_path: pointcloudPath }));
+      }
+
+      function generatePointCloud(png) {
+        const outputImagePath = png.output_image_path;
+        if (!outputImagePath) {
+          appendMessage("agent", "I do not have a PNG artifact to convert.");
+          return;
+        }
+        isRunning = true;
+        setStatus("Generating PLY...");
+        pendingMessage = appendMessage("agent", "Converting the edited PNG into a point cloud...", "pending");
+        sketchup.generate_point_cloud(JSON.stringify({ output_image_path: outputImagePath }));
+      }
+
+      function removePendingMessage() {
+        if (pendingMessage) {
+          pendingMessage.remove();
+          pendingMessage = null;
+        }
+      }
+
+      function runAgentPipeline() {
+        if (isRunning) return;
+        const prompt = promptInput.value.trim();
+        const shouldEdit = editIntentPattern.test(prompt) && lastPng && lastPng.output_image_path;
+        isRunning = true;
+        setResult("");
+        appendMessage("user", prompt || "Render this SketchUp view and create a point cloud.");
+        pendingMessage = appendMessage(
+          "agent",
+          shouldEdit ? "Editing the latest render..." : "Exporting viewport and running the agent pipeline...",
+          "pending"
+        );
+        setStatus(shouldEdit ? "Editing..." : "Running...");
+        promptInput.value = "";
+        if (shouldEdit) {
+          sketchup.edit_image(JSON.stringify({
+            image_path: lastPng.output_image_path,
+            prompt: prompt
+          }));
+          return;
+        }
+        sketchup.run_agent(JSON.stringify({
+          style: style.value,
+          user_prompt: prompt,
+          view: {
+            yaw: 0,
+            pitch: 0,
+            roll: 0
+          }
+        }));
+      }
+
+      window.ArchitechRenderer = {
+        receiveInitialState(payload) {
+          pointCloudImportCapability = payload.point_cloud_import || pointCloudImportCapability;
+          style.textContent = "";
+          payload.styles.forEach((preset) => {
+            const option = document.createElement("option");
+            option.value = preset;
+            option.textContent = preset;
+            style.appendChild(option);
+          });
+          setStatus(`Backend: ${payload.backend_url}`);
+          appendMessage("agent", "Ready. Tell me what to render from the current SketchUp view.");
+        },
+        receiveHealth(payload) {
+          setStatus(payload.status === "ok" ? "Backend is healthy." : "Backend check failed.");
+          setResult(payload);
+        },
+        receiveRenderResult(payload) {
+          isRunning = false;
+          removePendingMessage();
+          setStatus(payload.status === "success" ? "Render complete." : "Render failed.");
+          setResult(payload);
+        },
+        receiveImportResult(payload) {
+          setStatus(payload.status === "success" ? "Rendered image imported." : "Import failed.");
+          appendMessage(
+            "agent",
+            payload.status === "success"
+              ? `Imported PNG into SketchUp: ${payload.imported_image_path}`
+              : (payload.error_message || "PNG import failed.")
+          );
+          setResult(payload);
+        },
+        receivePointCloudRevealResult(payload) {
+          setStatus(payload.status === "success" ? "Point cloud revealed." : "Reveal point cloud failed.");
+          appendMessage(
+            "agent",
+            payload.status === "success"
+              ? `Revealed point cloud in Finder: ${payload.revealed_pointcloud_path}`
+              : (payload.error_message || "Reveal point cloud failed.")
+          );
+          setResult(payload);
+        },
+        receivePointCloudImportResult(payload) {
+          setStatus(payload.status === "success" ? "Point cloud imported." : "Point-cloud import failed.");
+          appendMessage(
+            "agent",
+            payload.status === "success"
+              ? `Imported point cloud into SketchUp: ${payload.imported_pointcloud_path}`
+              : (payload.error_message || "Point-cloud import failed.")
+          );
+          setResult(payload);
+        },
+        receivePointCloudResult(payload) {
+          isRunning = false;
+          removePendingMessage();
+          setStatus(payload.status === "success" ? "Point cloud complete." : "Point cloud failed.");
+          if (payload.status === "success") {
+            lastPointCloud = payload;
+            const message = document.createElement("article");
+            message.className = "message agent";
+            message.append(document.createTextNode("Done. I generated the point cloud from the edited render."));
+            appendTimestamp(message);
+            const artifacts = document.createElement("div");
+            artifacts.className = "artifact-grid";
+            artifacts.append(artifactCard("Point Cloud", payload.pointcloud_path || payload.local_pointcloud_path));
+            message.appendChild(artifacts);
+            appendPointCloudImportNote(message, payload);
+            const choices = document.createElement("div");
+            choices.className = "choice-row";
+            appendPointCloudChoices(choices, payload);
+            message.appendChild(choices);
+            const depthPreview = previewImage(payload.pointcloud_preview_url, "Generated depth preview");
+            if (depthPreview) {
+              const previews = document.createElement("div");
+              previews.className = "preview-grid";
+              previews.appendChild(depthPreview);
+              message.appendChild(previews);
+            }
+            thread.appendChild(message);
+            scrollThread();
+          } else {
+            appendMessage("agent", payload.error_message || "Point cloud failed.");
+          }
+          setResult(payload);
+        },
+        receiveEditImageResult(payload) {
+          isRunning = false;
+          removePendingMessage();
+          setStatus(payload.status === "success" ? "Edit complete." : "Edit failed.");
+          appendEditResult(payload);
+          setResult(payload);
+        },
+        receiveAgentResult(payload) {
+          isRunning = false;
+          removePendingMessage();
+          setStatus(payload.status === "success" ? "Done." : "Agent failed.");
+          appendAgentResult(payload);
+          setResult(payload);
+        }
+      };
+
+      promptInput.addEventListener("keydown", (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+          event.preventDefault();
+          runAgentPipeline();
+        }
+      });
+
+      sketchup.ready();
+    </script>
+  </body>
+</html>

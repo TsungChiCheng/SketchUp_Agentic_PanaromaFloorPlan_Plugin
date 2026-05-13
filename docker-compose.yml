@@ -1,0 +1,92 @@
+name: architech-ai-render-assistant
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: architech-ai-render-backend:dev
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      APP_ENV: development
+      EXPORT_DIR: /app/exports
+      OUTPUT_DIR: /app/outputs
+      POINTCLOUD_DIR: /app/pointclouds
+      RENDER_PROVIDER: "${RENDER_PROVIDER:-mock}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_IMAGE_MODEL: "${OPENAI_IMAGE_MODEL:-gpt-image-1.5}"
+      DEPTH_SERVICE_URL: "http://depth-service:8001"
+      AGENT_MODEL: "${AGENT_MODEL:-gpt-4o-mini}"
+      LOG_LEVEL: "${LOG_LEVEL:-warning}"
+    volumes:
+      - ./backend:/app
+      - ./exports:/app/exports
+      - ./outputs:/app/outputs
+      - ./pointclouds:/app/pointclouds
+      - ./examples:/app/examples:ro
+    depends_on:
+      depth-service:
+        condition: service_healthy
+    command:
+      - uvicorn
+      - main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --log-level
+      - "${LOG_LEVEL:-warning}"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  depth-service:
+    build:
+      context: ./depth_service
+      dockerfile: Dockerfile
+    image: architech-depth-service:dev
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "${DEPTH_SERVICE_PORT:-8001}:8001"
+    environment:
+      APP_ENV: development
+      EXPORT_DIR: /app/exports
+      OUTPUT_DIR: /app/outputs
+      POINTCLOUD_DIR: /app/pointclouds
+      DEPTH_MODEL: "${DEPTH_MODEL:-depth-anything-v2-metric-indoor-small}"
+      LOG_LEVEL: "${LOG_LEVEL:-warning}"
+    volumes:
+      - ./depth_service:/app
+      - ./exports:/app/exports
+      - ./outputs:/app/outputs
+      - ./pointclouds:/app/pointclouds
+    command:
+      - uvicorn
+      - main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+      - --reload
+      - --log-level
+      - "${LOG_LEVEL:-warning}"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2).read()"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s

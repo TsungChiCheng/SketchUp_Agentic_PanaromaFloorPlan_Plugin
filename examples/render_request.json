@@ -1,0 +1,25 @@
+{
+  "project_id": "demo-project",
+  "viewport_image_path": "exports/current_view.png",
+  "style": "modern interior",
+  "user_prompt": "make it warm and realistic",
+  "camera": {
+    "position": [1.2, 3.4, 2.1],
+    "direction": [0.0, 1.0, -0.2],
+    "fov": 45
+  },
+  "model": {
+    "bounds": {
+      "width": 8.2,
+      "depth": 6.4,
+      "height": 3.1
+    },
+    "materials": ["wood", "glass", "concrete"],
+    "selected_entity_count": 3
+  },
+  "render_options": {
+    "preserve_geometry": true,
+    "preserve_camera": true,
+    "output_resolution": "1024x1024"
+  }
+}

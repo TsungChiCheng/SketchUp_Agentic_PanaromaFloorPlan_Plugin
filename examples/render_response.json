@@ -1,0 +1,12 @@
+{
+  "status": "success",
+  "render_id": "render_20260513_103116_demo",
+  "output_image_path": "outputs/render_20260513_103116_demo.png",
+  "enhanced_prompt": "A realistic modern interior architectural rendering, preserving the original SketchUp geometry, camera angle, spatial layout, scale, openings, and material relationships.",
+  "negative_prompt": "cluttered space, distorted geometry, unrealistic layout, blurry image, distorted geometry, changed layout, unrealistic proportions, blurry image, low quality",
+  "recommendations": [
+    "Preserve the current camera angle for before-and-after comparison.",
+    "Use the Modern Interior style preset as the primary visual direction."
+  ],
+  "warnings": []
+}

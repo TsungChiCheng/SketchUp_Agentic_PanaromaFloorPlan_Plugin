@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="720" viewBox="0 0 640 720" role="img" aria-labelledby="title desc">
+  <title id="title">Architech Chat Agent Dialog</title>
+  <desc id="desc">Static SVG mock of the chat-style Architech agent dialog with transcript, user and agent messages, artifact cards, previews, and a bottom composer.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f5f6f8; }
+      .panel { fill: #ffffff; stroke: #d8dde6; stroke-width: 1; }
+      .user { fill: #eef4ff; stroke: #b9c8e8; stroke-width: 1; }
+      .soft { fill: #f0f2f5; stroke: #d8dde6; stroke-width: 1; }
+      .artifact { fill: #fafbfc; stroke: #edf0f4; stroke-width: 1; }
+      .line { stroke: #edf0f4; stroke-width: 1; }
+      .title { fill: #202124; font: 650 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .text { fill: #202124; font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .label { fill: #4d535b; font: 650 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .muted { fill: #6f7782; font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="640" height="720"/>
+
+  <g transform="translate(32 24)">
+    <text class="title" x="0" y="20">Architech Agent</text>
+    <text class="muted" x="412" y="20">Backend: 127.0.0.1:8000</text>
+
+    <g transform="translate(0 52)">
+      <rect class="panel" x="0" y="0" width="360" height="52" rx="8"/>
+      <text class="text" x="14" y="22">Ready. Tell me what to render from the</text>
+      <text class="text" x="14" y="40">current SketchUp view.</text>
+    </g>
+
+    <g transform="translate(178 124)">
+      <rect class="user" x="0" y="0" width="398" height="54" rx="8"/>
+      <text class="text" x="14" y="23">Make this a warm Scandinavian bedroom,</text>
+      <text class="text" x="14" y="41">then generate a point cloud.</text>
+    </g>
+
+    <g transform="translate(0 202)">
+      <rect class="panel" x="0" y="0" width="420" height="44" rx="8"/>
+      <text class="muted" x="14" y="27">Exporting viewport and running the agent pipeline...</text>
+    </g>
+
+    <g transform="translate(0 272)">
+      <rect class="panel" x="0" y="0" width="510" height="236" rx="8"/>
+      <text class="text" x="14" y="28">Done. I generated the render and point cloud.</text>
+
+      <rect class="artifact" x="14" y="48" width="482" height="38" rx="6"/>
+      <text class="label" x="28" y="72">Render</text>
+      <text class="muted" x="112" y="72">/app/outputs/render_...</text>
+
+      <rect class="artifact" x="14" y="96" width="482" height="38" rx="6"/>
+      <text class="label" x="28" y="120">Point Cloud</text>
+      <text class="muted" x="112" y="120">/app/pointclouds/pointcloud_...</text>
+
+      <rect class="soft" x="14" y="150" width="232" height="72" rx="6"/>
+      <text class="muted" x="84" y="190">Render preview</text>
+
+      <rect class="soft" x="264" y="150" width="232" height="72" rx="6"/>
+      <text class="muted" x="334" y="190">Depth preview</text>
+    </g>
+
+    <g transform="translate(0 540)">
+      <rect class="panel" x="0" y="0" width="576" height="128" rx="8"/>
+      <text class="muted" x="14" y="32">Ask Architech to render this view and create a point cloud...</text>
+      <line class="line" x1="14" y1="82" x2="562" y2="82"/>
+      <rect class="panel" x="14" y="94" width="220" height="24" rx="6"/>
+      <text class="text" x="24" y="111">Scandinavian Interior</text>
+      <path d="M214 102 l5 5 l5 -5" fill="none" stroke="#6f7782" stroke-width="1.4"/>
+      <text class="muted" x="496" y="111">Cmd+Enter</text>
+    </g>
+  </g>
+</svg>

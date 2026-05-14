@@ -1,5 +1,7 @@
 require "json"
 require "sketchup.rb"
+require "time"
+require "tmpdir"
 
 require_relative "exporter"
 require_relative "metadata_collector"
@@ -82,26 +84,28 @@ module Architech
       end
 
       def handle_health_check
-        result = RenderClient.new.health
-        execute_js("window.ArchitechRenderer.receiveHealth(#{JSON.generate(result)})")
-      rescue StandardError => e
-        execute_js("window.ArchitechRenderer.receiveHealth(#{JSON.generate(error_payload(e))})")
+        start_background_job(:health_check, "window.ArchitechRenderer.receiveHealth") do
+          RenderClient.new.health
+        end
       end
 
       def handle_submit_render(payload)
         options = JSON.parse(payload)
         export_path = Exporter.export_viewport(options.fetch("view", {}))
         metadata = MetadataCollector.collect
-        client = RenderClient.new
-        uploaded = client.upload_viewport(export_path)
-        request = build_render_request(options, uploaded.fetch("image_path"), metadata)
-        result = client.render(request)
-        result["local_output_image_path"] = download_output_artifact(client, result["output_image_path"])
-        result["local_export_image_path"] = export_path
-        result["export_preview_url"] = local_file_url(export_path)
-        result["render_preview_url"] = local_file_url(result["local_output_image_path"])
-        result["view"] = options.fetch("view", {})
-        execute_js("window.ArchitechRenderer.receiveRenderResult(#{JSON.generate(result)})")
+
+        start_background_job(:submit_render, "window.ArchitechRenderer.receiveRenderResult") do
+          client = RenderClient.new
+          uploaded = client.upload_viewport(export_path)
+          request = build_render_request(options, uploaded.fetch("image_path"), metadata)
+          result = client.render(request)
+          result["local_output_image_path"] = download_output_artifact(client, result["output_image_path"])
+          result["local_export_image_path"] = export_path
+          result["export_preview_url"] = local_file_url(export_path)
+          result["render_preview_url"] = local_file_url(result["local_output_image_path"])
+          result["view"] = options.fetch("view", {})
+          result
+        end
       rescue StandardError => e
         execute_js("window.ArchitechRenderer.receiveRenderResult(#{JSON.generate(error_payload(e))})")
       end
@@ -128,18 +132,18 @@ module Architech
         path = local_pointcloud_path(data.fetch("pointcloud_path"))
         raise "Point cloud not found: #{path}" unless File.exist?(path)
 
-        capability = point_cloud_import_capability
-        unless obj_file?(path) || capability[:supported]
-          raise "#{capability[:message]} Reveal the point-cloud file and import it manually: #{path}"
-        end
-
         model = Sketchup.active_model
         raise "No active SketchUp model is available." unless model
 
-        imported = model.import(path)
-        unless imported
-          raise "SketchUp could not import this point-cloud file. Install or enable Scan Essentials, then import manually: #{path}"
+        imported = if obj_file?(path)
+          model.import(path)
+        elsif scan_essentials_file?(path)
+          import_with_scan_essentials(path, model)
+        else
+          raise "Unsupported point-cloud format for direct import. Reveal the file and import it manually: #{path}"
         end
+
+        raise point_cloud_import_error(path) unless imported
 
         execute_js("window.ArchitechRenderer.receivePointCloudImportResult(#{JSON.generate({ status: "success", imported_pointcloud_path: path })})")
       rescue StandardError => e
@@ -151,11 +155,7 @@ module Architech
         path = local_pointcloud_path(data.fetch("pointcloud_path"))
         raise "Point cloud not found: #{path}" unless File.exist?(path)
 
-        revealed = if RUBY_PLATFORM.include?("darwin")
-          system("open", "-R", path)
-        else
-          UI.openURL(local_file_url(path))
-        end
+        revealed = reveal_file(path)
 
         raise "Could not reveal point-cloud file: #{path}" unless revealed
 
@@ -170,15 +170,17 @@ module Architech
         local_image_path = local_output_path(output_image_path)
         raise "Rendered image not found: #{local_image_path}" unless File.exist?(local_image_path)
 
-        result = RenderClient.new.point_cloud(
-          image_path: output_image_path,
-          output_format: "ply"
-        )
-        client = RenderClient.new
-        result["local_pointcloud_path"] = download_pointcloud_artifact(client, result["pointcloud_path"])
-        result["local_preview_image_path"] = download_pointcloud_artifact(client, result["preview_image_path"])
-        result["pointcloud_preview_url"] = local_file_url(result["local_preview_image_path"])
-        execute_js("window.ArchitechRenderer.receivePointCloudResult(#{JSON.generate(result)})")
+        start_background_job(:generate_point_cloud, "window.ArchitechRenderer.receivePointCloudResult") do
+          result = RenderClient.new.point_cloud(
+            image_path: output_image_path,
+            output_format: "ply"
+          )
+          client = RenderClient.new
+          result["local_pointcloud_path"] = download_pointcloud_artifact(client, result["pointcloud_path"])
+          result["local_preview_image_path"] = download_pointcloud_artifact(client, result["preview_image_path"])
+          result["pointcloud_preview_url"] = local_file_url(result["local_preview_image_path"])
+          result
+        end
       rescue StandardError => e
         execute_js("window.ArchitechRenderer.receivePointCloudResult(#{JSON.generate(error_payload(e))})")
       end
@@ -189,14 +191,16 @@ module Architech
         local_image_path = local_output_path(output_image_path)
         raise "Rendered image not found: #{local_image_path}" unless File.exist?(local_image_path)
 
-        result = RenderClient.new.edit_image(
-          image_path: output_image_path,
-          prompt: data.fetch("prompt"),
-          negative_prompt: data["negative_prompt"]
-        )
-        result["local_output_image_path"] = download_output_artifact(RenderClient.new, result["output_image_path"])
-        result["render_preview_url"] = local_file_url(result["local_output_image_path"])
-        execute_js("window.ArchitechRenderer.receiveEditImageResult(#{JSON.generate(result)})")
+        start_background_job(:edit_image, "window.ArchitechRenderer.receiveEditImageResult") do
+          result = RenderClient.new.edit_image(
+            image_path: output_image_path,
+            prompt: data.fetch("prompt"),
+            negative_prompt: data["negative_prompt"]
+          )
+          result["local_output_image_path"] = download_output_artifact(RenderClient.new, result["output_image_path"])
+          result["render_preview_url"] = local_file_url(result["local_output_image_path"])
+          result
+        end
       rescue StandardError => e
         execute_js("window.ArchitechRenderer.receiveEditImageResult(#{JSON.generate(error_payload(e))})")
       end
@@ -205,44 +209,217 @@ module Architech
         options = JSON.parse(payload)
         export_path = Exporter.export_viewport(options.fetch("view", {}))
         metadata = MetadataCollector.collect
-        client = RenderClient.new
-        uploaded = client.upload_viewport(export_path)
-        request = build_render_request(options, uploaded.fetch("image_path"), metadata)
-        result = client.run_agent(request)
 
-        png = result["png"] || {}
-        point_cloud = result["point_cloud"] || {}
-        png["local_output_image_path"] = download_output_artifact(client, png["output_image_path"]) if png["output_image_path"]
-        png["render_preview_url"] = local_file_url(png["local_output_image_path"]) if png["local_output_image_path"]
-        result["png"] = png
-        result["local_export_image_path"] = export_path
-        result["export_preview_url"] = local_file_url(export_path)
-        point_cloud["local_pointcloud_path"] = download_pointcloud_artifact(client, point_cloud["pointcloud_path"]) if point_cloud["pointcloud_path"]
-        point_cloud["local_preview_image_path"] = download_pointcloud_artifact(client, point_cloud["preview_image_path"]) if point_cloud["preview_image_path"]
-        point_cloud["pointcloud_preview_url"] = local_file_url(point_cloud["local_preview_image_path"]) if point_cloud["local_preview_image_path"]
-        result["point_cloud"] = point_cloud
-        execute_js("window.ArchitechRenderer.receiveAgentResult(#{JSON.generate(result)})")
+        start_background_job(:run_agent, "window.ArchitechRenderer.receiveAgentResult") do
+          client = RenderClient.new
+          uploaded = client.upload_viewport(export_path)
+          request = build_render_request(options, uploaded.fetch("image_path"), metadata)
+          result = client.run_agent(request)
+
+          png = result["png"] || {}
+          point_cloud = result["point_cloud"] || {}
+          png["local_output_image_path"] = download_output_artifact(client, png["output_image_path"]) if png["output_image_path"]
+          png["render_preview_url"] = local_file_url(png["local_output_image_path"]) if png["local_output_image_path"]
+          result["png"] = png
+          result["local_export_image_path"] = export_path
+          result["export_preview_url"] = local_file_url(export_path)
+          point_cloud["local_pointcloud_path"] = download_pointcloud_artifact(client, point_cloud["pointcloud_path"]) if point_cloud["pointcloud_path"]
+          point_cloud["local_preview_image_path"] = download_pointcloud_artifact(client, point_cloud["preview_image_path"]) if point_cloud["preview_image_path"]
+          point_cloud["pointcloud_preview_url"] = local_file_url(point_cloud["local_preview_image_path"]) if point_cloud["local_preview_image_path"]
+          result["point_cloud"] = point_cloud
+          result
+        end
       rescue StandardError => e
         execute_js("window.ArchitechRenderer.receiveAgentResult(#{JSON.generate(error_payload(e))})")
       end
 
       def handle_orchestrate_agent(payload)
+        debug_log("orchestrate callback received")
         options = JSON.parse(payload)
+        debug_log("exporting viewport")
         export_path = Exporter.export_viewport(options.fetch("view", {}))
+        debug_log("viewport exported: #{export_path}")
+        debug_log("collecting metadata")
         metadata = MetadataCollector.collect
+        debug_log("metadata collected")
+
+        if windows_platform?
+          start_external_orchestrate_job(options, export_path, metadata)
+        else
+          result = run_orchestrate_request(options, export_path, metadata)
+          execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(result)})")
+        end
+      rescue StandardError => e
+        debug_log("orchestrate failed: #{e.class}: #{e.message}")
+        execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(error_payload(e))})")
+      end
+
+      def start_external_orchestrate_job(options, export_path, metadata)
+        job_dir = Dir.mktmpdir("architech_orchestrate_")
+        job_path = File.join(job_dir, "job.json")
+        script_path = File.join(job_dir, "orchestrate.ps1")
+        result_path = File.join(job_dir, "result.json")
+        error_path = File.join(job_dir, "error.json")
+        log_path = File.join(job_dir, "worker.log")
+        request = build_render_request(options, nil, metadata)
+        request[:latest_png_path] = options["latest_png_path"]
+        request[:temporary_text_to_image_prompt] = options["temporary_text_to_image_prompt"]
+        request[:pointcloud_output_format] = "ply"
+        File.write(
+          job_path,
+          JSON.generate(
+            backend_url: RenderClient.default_base_url,
+            export_path: export_path,
+            request: request,
+            local_project_root: local_project_root,
+            result_path: result_path,
+            error_path: error_path,
+            log_path: log_path
+          )
+        )
+        File.write(script_path, external_orchestrate_script)
+        debug_log("starting external orchestrate worker")
+        Process.spawn(
+          "powershell.exe",
+          "-NoProfile",
+          "-WindowStyle",
+          "Hidden",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          script_path,
+          job_path
+        )
+        poll_external_orchestrate_result(result_path, error_path)
+      end
+
+      def poll_external_orchestrate_result(result_path, error_path)
+        UI.start_timer(0.5, false) do
+          path = File.exist?(result_path) ? result_path : nil
+          path ||= error_path if File.exist?(error_path)
+          if path
+            payload = JSON.parse(read_json_file(path))
+            debug_log("external orchestrate worker returned status=#{payload["status"]}")
+            execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(payload)})")
+          else
+            poll_external_orchestrate_result(result_path, error_path)
+          end
+        end
+      rescue StandardError => e
+        debug_log("external orchestrate polling failed: #{e.class}: #{e.message}")
+        execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(error_payload(e))})")
+      end
+
+      def external_orchestrate_script
+        <<~'POWERSHELL'
+          param([string]$JobPath)
+          $ErrorActionPreference = "Stop"
+          function Write-Utf8NoBom($Path, $Content) {
+            [IO.File]::WriteAllText($Path, $Content, [Text.UTF8Encoding]::new($false))
+          }
+          function Write-Log($Message) {
+            $stamp = [DateTime]::UtcNow.ToString("o")
+            [IO.File]::AppendAllText($script:Job.log_path, "[$stamp] $Message`r`n", [Text.UTF8Encoding]::new($false))
+          }
+          function Write-Result($Path, $Payload) {
+            Write-Utf8NoBom $Path ($Payload | ConvertTo-Json -Depth 80 -Compress)
+          }
+          function File-Url($Path) {
+            $resolved = [string]$Path
+            $resolved = $resolved -replace "\\", "/"
+            if ($resolved -match "^[A-Za-z]:/") {
+              return "file:///" + ($resolved -replace " ", "%20")
+            }
+            return "file://" + ($resolved -replace " ", "%20")
+          }
+          function Local-Artifact-Path($Root, $ArtifactPath) {
+            $name = [IO.Path]::GetFileName([string]$ArtifactPath)
+            if ([string]$ArtifactPath -like "/app/outputs/*") {
+              return [IO.Path]::Combine($Root, "outputs", $name)
+            }
+            if ([string]$ArtifactPath -like "/app/pointclouds/*") {
+              return [IO.Path]::Combine($Root, "pointclouds", $name)
+            }
+            return [string]$ArtifactPath
+          }
+          function Post-Json($BaseUrl, $Path, $Body) {
+            $json = $Body | ConvertTo-Json -Depth 80 -Compress
+            Invoke-RestMethod -Uri ($BaseUrl.TrimEnd("/") + $Path) -Method Post -ContentType "application/json" -Body $json -TimeoutSec 300
+          }
+          function Download-Artifact($BaseUrl, $Root, $ArtifactPath) {
+            if (-not $ArtifactPath) { return $null }
+            $destination = Local-Artifact-Path $Root $ArtifactPath
+            $parent = [IO.Path]::GetDirectoryName($destination)
+            if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+            $download = Post-Json $BaseUrl "/artifacts/download" @{ path = $ArtifactPath }
+            [IO.File]::WriteAllBytes($destination, [Convert]::FromBase64String($download.content_base64))
+            return $destination
+          }
+          try {
+            $script:Job = Get-Content -LiteralPath $JobPath -Raw | ConvertFrom-Json
+            $job = $script:Job
+            Write-Log "worker started"
+            $content = [Convert]::ToBase64String([IO.File]::ReadAllBytes($job.export_path))
+            Write-Log "uploading viewport"
+            $upload = Post-Json $job.backend_url "/uploads/viewport" @{
+              filename = [IO.Path]::GetFileName($job.export_path)
+              content_base64 = $content
+            }
+            $request = $job.request
+            $request.viewport_image_path = $upload.image_path
+            Write-Log "calling /agent/orchestrate"
+            $result = Post-Json $job.backend_url "/agent/orchestrate" $request
+            Write-Log "/agent/orchestrate returned status=$($result.status)"
+            if (-not $result.png) { $result | Add-Member -Force -NotePropertyName png -NotePropertyValue ([pscustomobject]@{}) }
+            if (-not $result.point_cloud) { $result | Add-Member -Force -NotePropertyName point_cloud -NotePropertyValue ([pscustomobject]@{}) }
+            if ($result.png.output_image_path) {
+              Write-Log "downloading png artifact"
+              $localPng = Download-Artifact $job.backend_url $job.local_project_root $result.png.output_image_path
+              $result.png | Add-Member -Force -NotePropertyName local_output_image_path -NotePropertyValue $localPng
+              $result.png | Add-Member -Force -NotePropertyName render_preview_url -NotePropertyValue (File-Url $localPng)
+            }
+            if ($result.point_cloud.pointcloud_path) {
+              Write-Log "downloading point cloud artifact"
+              $localPointCloud = Download-Artifact $job.backend_url $job.local_project_root $result.point_cloud.pointcloud_path
+              $result.point_cloud | Add-Member -Force -NotePropertyName local_pointcloud_path -NotePropertyValue $localPointCloud
+            }
+            if ($result.point_cloud.preview_image_path) {
+              Write-Log "downloading depth preview artifact"
+              $localPreview = Download-Artifact $job.backend_url $job.local_project_root $result.point_cloud.preview_image_path
+              $result.point_cloud | Add-Member -Force -NotePropertyName local_preview_image_path -NotePropertyValue $localPreview
+              $result.point_cloud | Add-Member -Force -NotePropertyName pointcloud_preview_url -NotePropertyValue (File-Url $localPreview)
+            }
+            $result | Add-Member -Force -NotePropertyName local_export_image_path -NotePropertyValue $job.export_path
+            $result | Add-Member -Force -NotePropertyName export_preview_url -NotePropertyValue (File-Url $job.export_path)
+            Write-Result $job.result_path $result
+            Write-Log "worker completed"
+          } catch {
+            try { Write-Log "worker failed: $($_.Exception.Message)" } catch {}
+            Write-Result $job.error_path @{
+              status = "failed"
+              error_message = $_.Exception.Message
+            }
+          }
+        POWERSHELL
+      end
+
+      def run_orchestrate_request(options, export_path, metadata)
+        debug_log("orchestrate request started")
         client = RenderClient.new
+        debug_log("uploading viewport to #{RenderClient.default_base_url}")
         uploaded = client.upload_viewport(export_path)
+        debug_log("viewport uploaded: #{uploaded.fetch("image_path")}")
         request = build_render_request(options, uploaded.fetch("image_path"), metadata)
         request[:latest_png_path] = options["latest_png_path"]
         request[:temporary_text_to_image_prompt] = options["temporary_text_to_image_prompt"]
         request[:pointcloud_output_format] = "ply"
+        debug_log("calling /agent/orchestrate")
         result = client.orchestrate_agent(request)
+        debug_log("/agent/orchestrate returned status=#{result["status"]}")
         hydrate_orchestrator_result(client, result)
         result["local_export_image_path"] = export_path
         result["export_preview_url"] = local_file_url(export_path)
-        execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(result)})")
-      rescue StandardError => e
-        execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(error_payload(e))})")
+        result
       end
 
       def build_render_request(options, viewport_image_path, metadata)
@@ -287,47 +464,200 @@ module Architech
         }
       end
 
+      def debug_log(message)
+        puts("[Architech AI Renderer] #{Time.now.utc.iso8601} #{message}")
+      rescue StandardError
+        nil
+      end
+
+      def read_json_file(path)
+        File.read(path, mode: "rb").sub(/\A\xEF\xBB\xBF/n, "")
+      end
+
+      def start_background_job(key, js_receiver)
+        unless reserve_background_job(key)
+          execute_js("#{js_receiver}(#{JSON.generate(error_payload(StandardError.new("A #{key.to_s.tr("_", " ")} job is already running.")))})")
+          return
+        end
+
+        runner_mutex = Mutex.new
+        runner_started = false
+        claim_runner = lambda do
+          runner_mutex.synchronize do
+            next false if runner_started
+
+            runner_started = true
+            true
+          end
+        end
+        thread = Thread.new do
+          next unless claim_runner.call
+
+          begin
+            payload = yield
+          rescue StandardError => e
+            payload = error_payload(e)
+          end
+
+          schedule_on_ui_thread do
+            release_background_job(key)
+            execute_js("#{js_receiver}(#{JSON.generate(payload)})")
+          end
+        end
+        thread.run if thread.respond_to?(:run)
+        Thread.pass if Thread.respond_to?(:pass)
+        schedule_on_ui_thread do
+          unless runner_started
+            debug_log("#{key} worker thread did not start; running job on SketchUp UI thread")
+            if claim_runner.call
+              run_background_job_on_ui_thread(key, js_receiver) { yield }
+            end
+          end
+        end
+      rescue StandardError => e
+        release_background_job(key)
+        execute_js("#{js_receiver}(#{JSON.generate(error_payload(e))})")
+      end
+
+      def run_background_job_on_ui_thread(key, js_receiver)
+        begin
+          payload = yield
+        rescue StandardError => e
+          payload = error_payload(e)
+        end
+
+        release_background_job(key)
+        execute_js("#{js_receiver}(#{JSON.generate(payload)})")
+      end
+
+      def reserve_background_job(key)
+        background_job_mutex.synchronize do
+          return false if background_jobs[key]
+
+          background_jobs[key] = true
+          true
+        end
+      end
+
+      def release_background_job(key)
+        background_job_mutex.synchronize do
+          background_jobs.delete(key)
+        end
+      end
+
+      def background_jobs
+        @background_jobs ||= {}
+      end
+
+      def background_job_mutex
+        @background_job_mutex ||= Mutex.new
+      end
+
+      def schedule_on_ui_thread(&block)
+        UI.start_timer(0, false, &block)
+      end
+
       def point_cloud_import_capability
-        if scan_essentials_available?
+        if scan_essentials_importer
           {
             supported: true,
             provider: "Scan Essentials",
-            message: "SketchUp point-cloud import support was detected."
+            message: "Direct Scan Essentials point-cloud import support was detected."
           }
         else
           {
             supported: false,
             provider: nil,
-            message: "SketchUp point-cloud import support was not detected."
+            message: "Direct SketchUp point-cloud import support was not detected."
           }
         end
       end
 
-      def scan_essentials_available?
-        scan_essentials_extension_loaded? || scan_essentials_constant_defined?
+      def import_with_scan_essentials(path, model)
+        importer = scan_essentials_importer
+        unless importer
+          raise "#{point_cloud_import_capability[:message]} Reveal the point-cloud file and import it manually through Scan Essentials: #{path}"
+        end
+
+        call_scan_essentials_importer(importer, path, model)
       end
 
-      def scan_essentials_extension_loaded?
-        return false unless Sketchup.respond_to?(:extensions)
+      def call_scan_essentials_importer(importer, path, model)
+        receiver = importer.fetch(:receiver)
+        method_name = importer.fetch(:method_name)
+        method_object = receiver.method(method_name)
+        arity = method_object.arity
+        args = arity == 1 ? [path] : [path, model]
+        result = method_object.call(*args)
+        result.nil? ? true : !!result
+      end
 
-        Sketchup.extensions.any? do |extension|
-          name = extension.respond_to?(:name) ? extension.name.to_s : ""
-          loaded = !extension.respond_to?(:loaded?) || extension.loaded?
-          loaded && name.match?(/scan\s*essentials|point\s*cloud/i)
+      def scan_essentials_importer
+        scan_essentials_importer_candidates.find do |candidate|
+          method_callable_with_path_and_model?(candidate.fetch(:receiver), candidate.fetch(:method_name))
+        end
+      end
+
+      def scan_essentials_importer_candidates
+        constants = []
+        constants << Object.const_get(:ScanEssentials) if Object.const_defined?(:ScanEssentials)
+        if Object.const_defined?(:Trimble) && Trimble.const_defined?(:ScanEssentials)
+          constants << Trimble.const_get(:ScanEssentials)
+        end
+
+        constants.uniq.flat_map do |receiver|
+          [:import_point_cloud, :import_file, :import, :load_point_cloud, :load_file].map do |method_name|
+            { receiver: receiver, method_name: method_name }
+          end
         end
       rescue StandardError
-        false
+        []
       end
 
-      def scan_essentials_constant_defined?
-        Object.const_defined?(:ScanEssentials) ||
-          (Object.const_defined?(:Trimble) && Trimble.const_defined?(:ScanEssentials))
+      def method_callable_with_path_and_model?(receiver, method_name)
+        return false unless receiver.respond_to?(method_name)
+
+        arity = receiver.method(method_name).arity
+        arity.negative? || arity == 1 || arity == 2
       rescue StandardError
         false
       end
 
       def obj_file?(path)
         File.extname(path.to_s).downcase == ".obj"
+      end
+
+      def scan_essentials_file?(path)
+        [".ply", ".las", ".laz"].include?(File.extname(path.to_s).downcase)
+      end
+
+      def point_cloud_import_error(path)
+        if scan_essentials_file?(path)
+          "Scan Essentials could not import this point-cloud file. Reveal the file and import it manually: #{path}"
+        else
+          "SketchUp could not import this point-cloud file: #{path}"
+        end
+      end
+
+      def reveal_file(path)
+        if RUBY_PLATFORM.include?("darwin")
+          system("open", "-R", path)
+        elsif windows_platform?
+          Process.spawn("explorer.exe", "/select,#{windows_path(path)}")
+          true
+        else
+          UI.openURL(local_file_url(path))
+        end
+      rescue StandardError
+        false
+      end
+
+      def windows_path(path)
+        path.to_s.tr("/", "\\")
+      end
+
+      def windows_platform?
+        RUBY_PLATFORM.match?(/mswin|mingw|cygwin/i)
       end
 
       def download_output_artifact(client, path)

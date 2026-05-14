@@ -272,7 +272,7 @@
       let temporaryTextToImagePrompt = "";
       let pointCloudImportCapability = {
         supported: false,
-        message: "SketchUp point-cloud import support was not detected."
+        message: "Direct SketchUp point-cloud import support was not detected."
       };
       function setStatus(message) {
         statusOutput.textContent = message;
@@ -451,7 +451,8 @@
       }
 
       function canImportPointCloud(pointCloud) {
-        return pointCloudFormat(pointCloud) === "OBJ" || pointCloudImportCapability.supported;
+        const format = pointCloudFormat(pointCloud);
+        return format === "OBJ" || (["PLY", "LAS", "LAZ"].includes(format) && pointCloudImportCapability.supported);
       }
 
       function revealPointCloudLabel(pointCloud) {
@@ -595,7 +596,7 @@
           appendMessage(
             "agent",
             payload.status === "success"
-              ? `Revealed point cloud in Finder: ${payload.revealed_pointcloud_path}`
+              ? `Revealed point cloud: ${payload.revealed_pointcloud_path}`
               : (payload.error_message || "Reveal point cloud failed.")
           );
           setResult(payload);

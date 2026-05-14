@@ -162,7 +162,7 @@ into SketchUp's Plugins folder, then restart SketchUp and use:
 Extensions -> AI Render Assistant
 ```
 
-The plugin can export the viewport, run the agent pipeline, preview PNG/depth artifacts, and offer import actions for generated files. PNG import is handled directly through SketchUp Ruby. Generated point-cloud files can always be revealed in Finder. New plugin-generated point clouds use PLY by default.
+The plugin can export the viewport, run the agent pipeline, preview PNG/depth artifacts, and offer import actions for generated files. PNG import is handled directly through SketchUp Ruby. Generated point-cloud files can always be revealed locally. New plugin-generated point clouds use PLY by default.
 
 The dialog sends prompts with the `Chat` button. The keyboard shortcut still works without a visible label: `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows/Linux.
 
@@ -172,7 +172,7 @@ The dialog sends prompts with the `Chat` button. The keyboard shortcut still wor
 - `outputs/` stores generated render PNGs.
 - `pointclouds/` stores generated OBJ/PLY/LAS files and depth previews.
 
-For SketchUp point-cloud import, use SketchUp Studio Scan Essentials on a supported operating system. On macOS, Reveal PLY works, but direct PLY/LAS point-cloud import is not available without Scan Essentials.
+For SketchUp point-cloud import, use SketchUp Studio Scan Essentials on a supported operating system. Reveal PLY is always available. Direct PLY/LAS import is only enabled when the plugin can find a callable Scan Essentials Ruby import API; otherwise reveal the file and import it manually through Scan Essentials.
 
 ## Tests
 

@@ -59,12 +59,12 @@ The dialog's visible `Chat` button and hidden keyboard shortcut (`Cmd+Enter` on 
 The import step is handled in the SketchUp plugin, not the backend, because it needs access to `Sketchup.active_model`.
 
 - `import_render` imports generated PNG files as SketchUp images.
-- `reveal_point_cloud` opens Finder at the generated geometry file.
-- `import_point_cloud` imports OBJ through SketchUp's generic importer. PLY/LAS import still requires compatible point-cloud support.
+- `reveal_point_cloud` reveals the generated geometry file locally.
+- `import_point_cloud` imports OBJ through SketchUp's generic importer. PLY/LAS/LAZ import never uses generic `model.import`; it only runs through a detected Scan Essentials Ruby import adapter.
 
 After `/agent/orchestrate` or `/agent/run` returns artifacts, the chat dialog asks the user whether to import the PNG. For geometry artifacts, the dialog always offers Reveal. PLY/LAS import requires a compatible importer such as Scan Essentials; OBJ remains available as an optional mesh format.
 
-If Scan Essentials exposes a concrete Ruby API, `import_point_cloud` should call that API before falling back to SketchUp's generic importer.
+If Scan Essentials does not expose a concrete Ruby API, `import_point_cloud` reports that direct import is unavailable and asks the user to reveal/import manually.
 
 ## Depth Anything V2 Integration Point
 

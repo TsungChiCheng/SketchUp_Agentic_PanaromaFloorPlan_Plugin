@@ -2,11 +2,14 @@
 
 SketchUp extension and local FastAPI services for AI-assisted architectural rendering and image-to-point-cloud generation.
 
-The system now exposes three primary workflows:
+The system now exposes these primary workflows:
 
+- `POST /uploads/viewport` uploads the SketchUp viewport PNG to the backend machine before rendering.
+- `POST /artifacts/download` downloads generated backend artifacts back to the SketchUp machine for preview, reveal, and import.
 - `POST /generate/png` generates a PNG render from a SketchUp viewport image and scene metadata.
 - `POST /edit/image` edits an existing PNG/JPEG from `exports/` or `outputs/`.
 - `POST /generate/point-cloud` converts a flat PNG into a colored PLY point cloud by default, with LAS/OBJ exports available through the depth service.
+- `POST /agent/orchestrate` classifies each request as generate, edit, discuss, or other and dispatches the matching tool path.
 - `POST /agent/run` runs a LangChain/OpenAI tool-calling agent for PNG generation, then Depth Anything V2-compatible point-cloud generation, with deterministic fallback orchestration when the agent is unavailable.
 
 ## Architecture
@@ -14,6 +17,7 @@ The system now exposes three primary workflows:
 ```text
 SketchUp Plugin
   -> FastAPI backend
+     -> viewport upload endpoint
      -> PNG generation tool
      -> image editing tool
      -> point-cloud generation tool
@@ -30,6 +34,10 @@ The current implementation uses internal backend tools, not a standalone MCP ser
 Create or update `.env`:
 
 ```env
+BACKEND_PORT=8000
+BACKEND_HOST=127.0.0.1
+ARCHITECH_RENDER_BACKEND_URL=http://127.0.0.1:8000
+DEPTH_SERVICE_PORT=8001
 RENDER_PROVIDER=openai
 OPENAI_API_KEY=your-openai-api-key
 OPENAI_IMAGE_MODEL=gpt-image-1.5
@@ -43,6 +51,14 @@ Start both services:
 docker compose up --build
 ```
 
+To use a backend running on another machine, set the SketchUp client URL in `.env`:
+
+```env
+ARCHITECH_RENDER_BACKEND_URL=http://192.168.1.50:8000
+```
+
+`BACKEND_HOST` and `BACKEND_PORT` can also be used to build the URL when `ARCHITECH_RENDER_BACKEND_URL` is not set. The backend container already listens on `0.0.0.0` and Docker publishes `${BACKEND_PORT:-8000}` to the host, so the remote machine must allow inbound traffic to that port.
+
 Health checks:
 
 ```bash
@@ -53,6 +69,18 @@ curl http://127.0.0.1:8001/health
 ## Endpoints
 
 ### Generate PNG
+
+When SketchUp talks to a backend on another machine, the extension first uploads the exported viewport PNG:
+
+```bash
+curl -X POST http://127.0.0.1:8000/uploads/viewport \
+  -H 'Content-Type: application/json' \
+  -d '{"filename":"viewport.png","content_base64":"..."}'
+```
+
+The response `image_path` is then used as `viewport_image_path` in render and agent requests.
+
+For remote backends, the extension downloads generated `/app/outputs/...` and `/app/pointclouds/...` artifacts through `POST /artifacts/download` before showing previews or local reveal/import actions.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/generate/png \
@@ -84,6 +112,15 @@ The response includes a colored `.ply` file by default and a depth preview PNG u
 
 ### Run Agent
 
+The SketchUp dialog uses `/agent/orchestrate` for normal chat requests. The orchestrator receives the latest PNG path when available, classifies intent, and dispatches:
+
+- `generate` -> prompt generation plus PNG and point-cloud tools
+- `edit` -> image edit tool, then point-cloud generation from the edited PNG
+- `discuss` -> updates temporary text-to-image direction without rendering
+- `other` -> clarification/no tool call
+
+This avoids frontend keyword routing for prompts such as `add a sofa to this room`.
+
 ```bash
 curl -X POST http://127.0.0.1:8000/agent/run \
   -H 'Content-Type: application/json' \
@@ -94,7 +131,7 @@ The agent endpoint returns both PNG and point-cloud artifacts plus a trace of th
 
 The agent rejects underspecified conversational input such as `Hi` before generating artifacts and returns a failed response asking for a rendering or editing instruction.
 
-Prompt definitions live in `backend/prompts.py`.
+Agent system prompts, tool descriptions, image prompts, intent-classifier prompts, and prompt message builders live in `backend/prompts.py`.
 
 ## Render Providers
 
@@ -127,6 +164,8 @@ Extensions -> AI Render Assistant
 
 The plugin can export the viewport, run the agent pipeline, preview PNG/depth artifacts, and offer import actions for generated files. PNG import is handled directly through SketchUp Ruby. Generated point-cloud files can always be revealed in Finder. New plugin-generated point clouds use PLY by default.
 
+The dialog sends prompts with the `Chat` button. The keyboard shortcut still works without a visible label: `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows/Linux.
+
 ## Artifacts
 
 - `exports/` stores SketchUp viewport PNGs.
@@ -153,6 +192,8 @@ docker compose run --rm depth-service pytest tests -q
 
 - Product and architecture spec: `docs/spec.md`
 - Implementation checklist: `docs/implementation.md`
+- Agent architecture diagram: `docs/agent-architecture.svg`
+- Current SketchUp dialog mock: `docs/current-extension-ui.svg`
 
 ## Current Limits
 

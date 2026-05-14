@@ -26,9 +26,12 @@ Architech connects SketchUp to a local agentic rendering backend. The backend ca
 SketchUp Plugin
   exports viewport PNG + metadata
 FastAPI Backend
+  /uploads/viewport
+  /artifacts/download
   /generate/png
   /edit/image
   /generate/point-cloud
+  /agent/orchestrate
   /agent/run
 Depth Service
   /depth/point-cloud
@@ -39,6 +42,19 @@ Artifacts
 ```
 
 ## Public Endpoints
+
+### `POST /uploads/viewport`
+
+Accepts:
+
+- plain image filename
+- base64-encoded PNG/JPEG content
+
+Writes the uploaded image under backend `EXPORT_DIR` and returns the backend-local `image_path` for render and agent requests. This allows a SketchUp client on one machine to use a backend hosted on another machine.
+
+### `POST /artifacts/download`
+
+Accepts an artifact path under backend `EXPORT_DIR`, `OUTPUT_DIR`, or `POINTCLOUD_DIR`, and returns base64 file content. The SketchUp plugin uses this to mirror generated remote files into local `outputs/` and `pointclouds/` folders for preview, reveal, and import.
 
 ### `POST /generate/png`
 
@@ -77,6 +93,18 @@ Returns:
 - depth model name
 - warnings
 
+### `POST /agent/orchestrate`
+
+Accepts the render request schema plus latest dialog state:
+
+- latest PNG path, when available
+- temporary text-to-image prompt, when available
+- point-cloud output format
+
+Classifies the request as `generate`, `edit`, `discuss`, or `other`, assigns the matching sub-agent, and calls only the corresponding tool path. The SketchUp dialog should call this endpoint instead of deciding edit/generate intent with frontend keyword matching.
+
+The SketchUp composer submits the same orchestration request from the visible `Chat` button or the hidden keyboard shortcut (`Cmd+Enter` on macOS, `Ctrl+Enter` elsewhere).
+
 ### `POST /agent/run`
 
 Accepts the render request schema plus optional point-cloud output settings. The agent runs:
@@ -102,8 +130,8 @@ V1 uses internal backend tools rather than a standalone MCP server:
 SketchUp-local import tools are implemented as dialog callbacks because importing files into the active model must run inside SketchUp:
 
 - `ImportPngToSketchUp`
-- `ImportLasToSketchUp`
-- `RevealLasInFinder`
+- `RevealPointCloudInFinder`
+- `ImportPointCloudToSketchUp`
 
 After artifact generation, the dialog asks the user whether to import the PNG. For geometry artifacts, the dialog always offers Reveal. PLY/LAS point-cloud import depends on a compatible importer, such as Scan Essentials. OBJ remains available as an optional mesh format.
 
@@ -127,9 +155,12 @@ Current implementation provides deterministic fallback depth for local tests. Pr
 
 - Backend exposes `/generate/png`, `/generate/point-cloud`, and `/agent/run`.
 - Backend exposes `/edit/image`.
+- Backend exposes `/uploads/viewport`, `/artifacts/download`, and `/agent/orchestrate`.
 - Agent does not generate images for conversational-only prompts.
+- Agent routes edit requests with an existing latest PNG to the image edit tool instead of the text-to-image generation tool.
 - Depth service exposes `/depth/point-cloud`.
 - Agent endpoint returns both PNG and point-cloud artifacts.
 - Generated point-cloud artifacts are written under `pointclouds/`.
+- The SketchUp dialog shows a `Chat` button and keeps the keyboard shortcut hidden from the visible UI.
 - Existing `/render` and `/agent/suggest-prompt` behavior remains compatible.
 - README documents setup, endpoints, artifacts, tests, and SketchUp usage.

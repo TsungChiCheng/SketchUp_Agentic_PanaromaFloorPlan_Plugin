@@ -13,6 +13,8 @@
       .text { fill: #202124; font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       .label { fill: #4d535b; font: 650 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       .muted { fill: #6f7782; font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .button { fill: #edf4ff; stroke: #9fb7dc; stroke-width: 1; }
+      .buttonText { fill: #153e75; font: 650 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     </style>
   </defs>
 
@@ -65,7 +67,8 @@
       <rect class="panel" x="14" y="94" width="220" height="24" rx="6"/>
       <text class="text" x="24" y="111">Scandinavian Interior</text>
       <path d="M214 102 l5 5 l5 -5" fill="none" stroke="#6f7782" stroke-width="1.4"/>
-      <text class="muted" x="496" y="111">Cmd+Enter</text>
+      <rect class="button" x="506" y="92" width="56" height="28" rx="6"/>
+      <text class="buttonText" x="522" y="111">Chat</text>
     </g>
   </g>
 </svg>

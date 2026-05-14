@@ -81,6 +81,40 @@ class RenderResponse(StrictModel):
     error_message: str | None = None
 
 
+class ViewportUploadRequest(StrictModel):
+    filename: str = Field(min_length=1)
+    content_base64: str = Field(min_length=1)
+
+    @field_validator("filename")
+    @classmethod
+    def validate_filename(cls, value: str) -> str:
+        lowered = value.lower()
+        if "\x00" in value or "/" in value or "\\" in value:
+            raise ValueError("filename must be a plain image filename")
+        if not lowered.endswith((".png", ".jpg", ".jpeg")):
+            raise ValueError("filename must end with PNG or JPEG")
+        return value
+
+
+class ViewportUploadResponse(StrictModel):
+    status: Literal["success"]
+    image_path: str
+    filename: str
+    size_bytes: int = Field(ge=0)
+
+
+class ArtifactDownloadRequest(StrictModel):
+    path: str = Field(min_length=1)
+
+
+class ArtifactDownloadResponse(StrictModel):
+    status: Literal["success"]
+    path: str
+    filename: str
+    content_base64: str
+    size_bytes: int = Field(ge=0)
+
+
 class ImageEditRequest(StrictModel):
     image_path: str = Field(min_length=1)
     prompt: str = Field(min_length=1)
@@ -161,5 +195,29 @@ class AgentRunResponse(StrictModel):
     trace: list[str] = Field(default_factory=list)
     started_at: str | None = None
     completed_at: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    error_message: str | None = None
+
+
+AgentIntent = Literal["generate", "edit", "discuss", "other"]
+
+
+class AgentOrchestrateRequest(RenderRequest):
+    latest_png_path: str | None = None
+    temporary_text_to_image_prompt: str | None = None
+    pointcloud_output_format: PointCloudOutputFormat = "ply"
+
+
+class AgentOrchestrateResponse(StrictModel):
+    status: Literal["success", "failed"]
+    intent: AgentIntent
+    assigned_agent: str
+    message: str
+    text_to_image_prompt: str | None = None
+    png: dict[str, Any] | None = None
+    point_cloud: PointCloudGenerationResponse | None = None
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    api_calls: list[dict[str, Any]] = Field(default_factory=list)
+    trace: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     error_message: str | None = None

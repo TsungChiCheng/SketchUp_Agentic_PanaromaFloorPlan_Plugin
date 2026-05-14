@@ -2,7 +2,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from point_cloud_tool import generate_point_cloud
-from prompts import AGENT_SYSTEM_PROMPT, assess_agent_readiness
+from prompts import (
+    AGENT_SYSTEM_PROMPT,
+    GENERATE_PNG_TOOL_DESCRIPTION,
+    GENERATE_POINT_CLOUD_TOOL_DESCRIPTION,
+    assess_agent_readiness,
+    compose_agent_user_message,
+)
 from png_tool import generate_png
 from schemas import (
     AgentRunRequest,
@@ -140,12 +146,12 @@ def _run_langchain_agent(
         StructuredTool.from_function(
             func=generate_png_tool,
             name="generate_png",
-            description="Generate a rendered PNG from the current SketchUp viewport and user prompt.",
+            description=GENERATE_PNG_TOOL_DESCRIPTION,
         ),
         StructuredTool.from_function(
             func=generate_point_cloud_tool,
             name="generate_point_cloud",
-            description="Convert the generated PNG into a color point cloud using Depth Anything V2.",
+            description=GENERATE_POINT_CLOUD_TOOL_DESCRIPTION,
         ),
     ]
     tools_by_name = {tool.name: tool for tool in tools}
@@ -166,11 +172,7 @@ def _run_langchain_agent(
             content=AGENT_SYSTEM_PROMPT
         ),
         HumanMessage(
-            content=(
-                f"Style: {request.style}\n"
-                f"User prompt: {request.user_prompt or ''}\n"
-                f"Output point cloud format: {request.pointcloud_output_format}"
-            )
+            content=compose_agent_user_message(request)
         ),
     ]
 

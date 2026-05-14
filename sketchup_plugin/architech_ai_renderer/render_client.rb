@@ -1,6 +1,8 @@
 require "json"
 require "net/http"
 require "uri"
+require "base64"
+require "fileutils"
 
 module Architech
   module AIRenderer
@@ -8,7 +10,16 @@ module Architech
       DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 
       def self.default_base_url
-        ENV.fetch("ARCHITECH_RENDER_BACKEND_URL", DEFAULT_BASE_URL)
+        configured_url = ENV["ARCHITECH_RENDER_BACKEND_URL"] ||
+          dotenv_value("ARCHITECH_RENDER_BACKEND_URL") ||
+          dotenv_value("BACKEND_URL")
+        return configured_url if configured_url && !configured_url.empty?
+
+        host = ENV["BACKEND_HOST"] || dotenv_value("BACKEND_HOST")
+        port = ENV["BACKEND_PORT"] || dotenv_value("BACKEND_PORT") || "8000"
+        return "http://#{host}:#{port}" if host && !host.empty?
+
+        DEFAULT_BASE_URL
       end
 
       def initialize(base_url = self.class.default_base_url)
@@ -33,6 +44,26 @@ module Architech
 
       def run_agent(payload)
         request(:post, "/agent/run", payload)
+      end
+
+      def orchestrate_agent(payload)
+        request(:post, "/agent/orchestrate", payload)
+      end
+
+      def upload_viewport(path)
+        payload = {
+          filename: File.basename(path),
+          content_base64: Base64.strict_encode64(File.binread(path))
+        }
+        request(:post, "/uploads/viewport", payload)
+      end
+
+      def download_artifact(path, destination)
+        payload = { path: path }
+        result = request(:post, "/artifacts/download", payload)
+        FileUtils.mkdir_p(File.dirname(destination))
+        File.binwrite(destination, Base64.decode64(result.fetch("content_base64")))
+        destination
       end
 
       private
@@ -68,6 +99,40 @@ module Architech
         JSON.parse(body)
       rescue JSON::ParserError
         raise "Backend returned invalid JSON."
+      end
+
+      def self.dotenv_value(key)
+        dotenv.each do |line|
+          name, value = parse_dotenv_line(line)
+          return value if name == key
+        end
+        nil
+      end
+
+      def self.dotenv
+        @dotenv ||= dotenv_paths.flat_map do |path|
+          File.exist?(path) ? File.readlines(path, chomp: true) : []
+        end
+      end
+
+      def self.dotenv_paths
+        [
+          ENV["ARCHITECH_RENDER_ENV_PATH"],
+          File.join(AIRenderer::REPO_ROOT, ".env"),
+          File.join(AIRenderer::PLUGIN_ROOT, ".env"),
+          File.expand_path("~/Desktop/sketchup_plugin/.env"),
+          File.expand_path("~/Desktop/architech/.env")
+        ].compact.uniq
+      end
+
+      def self.parse_dotenv_line(line)
+        stripped = line.to_s.strip
+        return [nil, nil] if stripped.empty? || stripped.start_with?("#") || !stripped.include?("=")
+
+        name, value = stripped.split("=", 2)
+        value = value.to_s.strip
+        value = value[1...-1] if value.length >= 2 && value.start_with?('"') && value.end_with?('"')
+        [name.to_s.strip, value]
       end
     end
   end

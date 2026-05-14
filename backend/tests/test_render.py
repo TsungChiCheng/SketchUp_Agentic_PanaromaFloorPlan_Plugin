@@ -91,6 +91,60 @@ def test_generate_png_endpoint_uses_render_provider(monkeypatch, tmp_path) -> No
     assert body["provider"] == "mock"
 
 
+def test_upload_viewport_writes_export_file(monkeypatch, tmp_path) -> None:
+    export_dir = tmp_path / "exports"
+    monkeypatch.setenv("EXPORT_DIR", str(export_dir))
+    client = TestClient(app)
+
+    response = client.post(
+        "/uploads/viewport",
+        json={
+            "filename": "viewport_test.png",
+            "content_base64": base64.b64encode(b"viewport image").decode("ascii"),
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "status": "success",
+        "image_path": "viewport_test.png",
+        "filename": "viewport_test.png",
+        "size_bytes": len(b"viewport image"),
+    }
+    assert export_dir.joinpath("viewport_test.png").read_bytes() == b"viewport image"
+
+
+def test_upload_viewport_rejects_invalid_base64(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("EXPORT_DIR", str(tmp_path / "exports"))
+    client = TestClient(app)
+
+    response = client.post(
+        "/uploads/viewport",
+        json={"filename": "viewport_test.png", "content_base64": "not base64"},
+    )
+
+    assert response.status_code == 422
+    assert "base64" in response.json()["detail"]
+
+
+def test_download_artifact_returns_output_file(monkeypatch, tmp_path) -> None:
+    output_dir = tmp_path / "outputs"
+    output_dir.mkdir()
+    output_dir.joinpath("render.png").write_bytes(b"render bytes")
+    monkeypatch.setenv("OUTPUT_DIR", str(output_dir))
+    client = TestClient(app)
+
+    response = client.post("/artifacts/download", json={"path": "/app/outputs/render.png"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["filename"] == "render.png"
+    assert body["content_base64"] == base64.b64encode(b"render bytes").decode("ascii")
+    assert body["size_bytes"] == len(b"render bytes")
+
+
 def test_edit_image_endpoint_uses_mock_provider(monkeypatch, tmp_path) -> None:
     output_dir = tmp_path / "outputs"
     output_dir.mkdir()
@@ -210,6 +264,51 @@ def test_agent_run_orchestrates_png_then_point_cloud(monkeypatch, tmp_path) -> N
         "tool:generate_point_cloud",
     ]
     assert body["api_calls"][0]["prompt"] == valid_render_payload()["user_prompt"]
+
+
+def test_orchestrator_routes_add_to_edit_when_latest_png_exists(monkeypatch, tmp_path) -> None:
+    output_dir = tmp_path / "outputs"
+    output_dir.mkdir()
+    output_dir.joinpath("latest.png").write_bytes(b"latest image")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("RENDER_PROVIDER", raising=False)
+    monkeypatch.setenv("OUTPUT_DIR", str(output_dir))
+
+    def fake_post(*args, **kwargs):
+        return httpx.Response(
+            200,
+            json={
+                "status": "success",
+                "artifact_id": "pointcloud_test",
+                "pointcloud_path": "/app/pointclouds/pointcloud_test.ply",
+                "preview_image_path": "/app/pointclouds/pointcloud_test_depth_preview.png",
+                "output_format": "ply",
+                "point_count": 10,
+                "depth_model": "depth-anything-v2-metric-indoor-small",
+                "warnings": [],
+                "error_message": None,
+            },
+        )
+
+    payload = {
+        **valid_render_payload(),
+        "user_prompt": "add a sofa to this room",
+        "latest_png_path": "latest.png",
+    }
+    monkeypatch.setattr("point_cloud_tool.httpx.post", fake_post)
+    client = TestClient(app)
+
+    response = client.post("/agent/orchestrate", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "edit"
+    assert [call["name"] for call in body["api_calls"]] == [
+        "POST /agent/orchestrate",
+        "tool:edit_image",
+        "tool:generate_point_cloud",
+    ]
+    assert "tool:generate_png" not in body["trace"]
 
 
 def test_agent_run_asks_for_more_information_for_greeting() -> None:

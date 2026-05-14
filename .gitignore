@@ -17,3 +17,5 @@ outputs/*
 .codex
 .omx
 .omc
+pointclouds/
+outputs/

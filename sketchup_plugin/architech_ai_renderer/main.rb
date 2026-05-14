@@ -50,6 +50,10 @@ module Architech
           handle_run_agent(payload)
         end
 
+        dialog.add_action_callback("orchestrate_agent") do |_context, payload|
+          handle_orchestrate_agent(payload)
+        end
+
         dialog.set_file(DIALOG_PATH)
         dialog.show
       end
@@ -88,9 +92,11 @@ module Architech
         options = JSON.parse(payload)
         export_path = Exporter.export_viewport(options.fetch("view", {}))
         metadata = MetadataCollector.collect
-        request = build_render_request(options, export_path, metadata)
-        result = RenderClient.new.render(request)
-        result["local_output_image_path"] = local_output_path(result["output_image_path"])
+        client = RenderClient.new
+        uploaded = client.upload_viewport(export_path)
+        request = build_render_request(options, uploaded.fetch("image_path"), metadata)
+        result = client.render(request)
+        result["local_output_image_path"] = download_output_artifact(client, result["output_image_path"])
         result["local_export_image_path"] = export_path
         result["export_preview_url"] = local_file_url(export_path)
         result["render_preview_url"] = local_file_url(result["local_output_image_path"])
@@ -168,8 +174,9 @@ module Architech
           image_path: output_image_path,
           output_format: "ply"
         )
-        result["local_pointcloud_path"] = local_pointcloud_path(result["pointcloud_path"])
-        result["local_preview_image_path"] = local_pointcloud_path(result["preview_image_path"])
+        client = RenderClient.new
+        result["local_pointcloud_path"] = download_pointcloud_artifact(client, result["pointcloud_path"])
+        result["local_preview_image_path"] = download_pointcloud_artifact(client, result["preview_image_path"])
         result["pointcloud_preview_url"] = local_file_url(result["local_preview_image_path"])
         execute_js("window.ArchitechRenderer.receivePointCloudResult(#{JSON.generate(result)})")
       rescue StandardError => e
@@ -187,7 +194,7 @@ module Architech
           prompt: data.fetch("prompt"),
           negative_prompt: data["negative_prompt"]
         )
-        result["local_output_image_path"] = local_output_path(result["output_image_path"])
+        result["local_output_image_path"] = download_output_artifact(RenderClient.new, result["output_image_path"])
         result["render_preview_url"] = local_file_url(result["local_output_image_path"])
         execute_js("window.ArchitechRenderer.receiveEditImageResult(#{JSON.generate(result)})")
       rescue StandardError => e
@@ -198,18 +205,20 @@ module Architech
         options = JSON.parse(payload)
         export_path = Exporter.export_viewport(options.fetch("view", {}))
         metadata = MetadataCollector.collect
-        request = build_render_request(options, export_path, metadata)
-        result = RenderClient.new.run_agent(request)
+        client = RenderClient.new
+        uploaded = client.upload_viewport(export_path)
+        request = build_render_request(options, uploaded.fetch("image_path"), metadata)
+        result = client.run_agent(request)
 
         png = result["png"] || {}
         point_cloud = result["point_cloud"] || {}
-        png["local_output_image_path"] = local_output_path(png["output_image_path"]) if png["output_image_path"]
+        png["local_output_image_path"] = download_output_artifact(client, png["output_image_path"]) if png["output_image_path"]
         png["render_preview_url"] = local_file_url(png["local_output_image_path"]) if png["local_output_image_path"]
         result["png"] = png
         result["local_export_image_path"] = export_path
         result["export_preview_url"] = local_file_url(export_path)
-        point_cloud["local_pointcloud_path"] = local_pointcloud_path(point_cloud["pointcloud_path"]) if point_cloud["pointcloud_path"]
-        point_cloud["local_preview_image_path"] = local_pointcloud_path(point_cloud["preview_image_path"]) if point_cloud["preview_image_path"]
+        point_cloud["local_pointcloud_path"] = download_pointcloud_artifact(client, point_cloud["pointcloud_path"]) if point_cloud["pointcloud_path"]
+        point_cloud["local_preview_image_path"] = download_pointcloud_artifact(client, point_cloud["preview_image_path"]) if point_cloud["preview_image_path"]
         point_cloud["pointcloud_preview_url"] = local_file_url(point_cloud["local_preview_image_path"]) if point_cloud["local_preview_image_path"]
         result["point_cloud"] = point_cloud
         execute_js("window.ArchitechRenderer.receiveAgentResult(#{JSON.generate(result)})")
@@ -217,10 +226,29 @@ module Architech
         execute_js("window.ArchitechRenderer.receiveAgentResult(#{JSON.generate(error_payload(e))})")
       end
 
-      def build_render_request(options, export_path, metadata)
+      def handle_orchestrate_agent(payload)
+        options = JSON.parse(payload)
+        export_path = Exporter.export_viewport(options.fetch("view", {}))
+        metadata = MetadataCollector.collect
+        client = RenderClient.new
+        uploaded = client.upload_viewport(export_path)
+        request = build_render_request(options, uploaded.fetch("image_path"), metadata)
+        request[:latest_png_path] = options["latest_png_path"]
+        request[:temporary_text_to_image_prompt] = options["temporary_text_to_image_prompt"]
+        request[:pointcloud_output_format] = "ply"
+        result = client.orchestrate_agent(request)
+        hydrate_orchestrator_result(client, result)
+        result["local_export_image_path"] = export_path
+        result["export_preview_url"] = local_file_url(export_path)
+        execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(result)})")
+      rescue StandardError => e
+        execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(error_payload(e))})")
+      end
+
+      def build_render_request(options, viewport_image_path, metadata)
         {
           project_id: "sketchup-local",
-          viewport_image_path: File.basename(export_path),
+          viewport_image_path: viewport_image_path,
           style: options.fetch("style", StylePresets.default),
           user_prompt: options.fetch("user_prompt", ""),
           camera: metadata.fetch(:camera),
@@ -231,6 +259,25 @@ module Architech
             output_resolution: "1024x1024"
           }
         }
+      end
+
+      def hydrate_orchestrator_result(client, result)
+        png = result["png"] || {}
+        if png["output_image_path"]
+          png["local_output_image_path"] = download_output_artifact(client, png["output_image_path"])
+          png["render_preview_url"] = local_file_url(png["local_output_image_path"])
+        end
+        result["png"] = png
+
+        point_cloud = result["point_cloud"] || {}
+        if point_cloud["pointcloud_path"]
+          point_cloud["local_pointcloud_path"] = download_pointcloud_artifact(client, point_cloud["pointcloud_path"])
+        end
+        if point_cloud["preview_image_path"]
+          point_cloud["local_preview_image_path"] = download_pointcloud_artifact(client, point_cloud["preview_image_path"])
+          point_cloud["pointcloud_preview_url"] = local_file_url(point_cloud["local_preview_image_path"])
+        end
+        result["point_cloud"] = point_cloud
       end
 
       def error_payload(error)
@@ -283,10 +330,18 @@ module Architech
         File.extname(path.to_s).downcase == ".obj"
       end
 
+      def download_output_artifact(client, path)
+        client.download_artifact(path, local_output_path(path))
+      end
+
+      def download_pointcloud_artifact(client, path)
+        client.download_artifact(path, local_pointcloud_path(path))
+      end
+
       def local_output_path(path)
         path = path.to_s
         if path.start_with?("/app/outputs/")
-          File.join(File.expand_path("~/Desktop/architech/outputs"), File.basename(path))
+          File.join(local_project_root, "outputs", File.basename(path))
         else
           path
         end
@@ -295,10 +350,20 @@ module Architech
       def local_pointcloud_path(path)
         path = path.to_s
         if path.start_with?("/app/pointclouds/")
-          File.join(File.expand_path("~/Desktop/architech/pointclouds"), File.basename(path))
+          File.join(local_project_root, "pointclouds", File.basename(path))
         else
           path
         end
+      end
+
+      def local_project_root
+        configured = ENV["ARCHITECH_LOCAL_PROJECT_DIR"]
+        return File.expand_path(configured) if configured && !configured.empty?
+
+        sketchup_plugin = File.expand_path("~/Desktop/sketchup_plugin")
+        return sketchup_plugin if Dir.exist?(sketchup_plugin)
+
+        File.expand_path("~/Desktop/architech")
       end
 
       def local_file_url(path)

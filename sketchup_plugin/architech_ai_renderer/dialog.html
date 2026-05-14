@@ -197,6 +197,29 @@
         font-size: 12px;
       }
 
+      .composer-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .chat-button {
+        border: 1px solid #9fb7dc;
+        border-radius: 6px;
+        padding: 6px 12px;
+        background: #edf4ff;
+        color: #153e75;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      .chat-button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+
       select {
         min-width: 0;
         max-width: 260px;
@@ -226,7 +249,9 @@
         <textarea id="prompt" placeholder="Ask Architech to render this view and create a point cloud..."></textarea>
         <div class="composer-meta">
           <select id="style"></select>
-          <span>Cmd+Enter</span>
+          <div class="composer-actions">
+            <button id="chat" class="chat-button" type="button">Chat</button>
+          </div>
         </div>
       </section>
 
@@ -239,18 +264,23 @@
       const promptInput = document.getElementById("prompt");
       const statusOutput = document.getElementById("status");
       const resultOutput = document.getElementById("result");
+      const chatButton = document.getElementById("chat");
       let isRunning = false;
       let pendingMessage = null;
       let lastPng = null;
       let lastPointCloud = null;
+      let temporaryTextToImagePrompt = "";
       let pointCloudImportCapability = {
         supported: false,
         message: "SketchUp point-cloud import support was not detected."
       };
-      const editIntentPattern = /\b(edit|change|adjust|revise|update|warmer|cooler|brighter|darker|lighting|light|color|material|replace)\b/i;
-
       function setStatus(message) {
         statusOutput.textContent = message;
+      }
+
+      function setRunning(value) {
+        isRunning = value;
+        chatButton.disabled = value;
       }
 
       function setResult(value) {
@@ -488,7 +518,7 @@
           appendMessage("agent", "I do not have a PNG artifact to convert.");
           return;
         }
-        isRunning = true;
+        setRunning(true);
         setStatus("Generating PLY...");
         pendingMessage = appendMessage("agent", "Converting the edited PNG into a point cloud...", "pending");
         sketchup.generate_point_cloud(JSON.stringify({ output_image_path: outputImagePath }));
@@ -504,27 +534,21 @@
       function runAgentPipeline() {
         if (isRunning) return;
         const prompt = promptInput.value.trim();
-        const shouldEdit = editIntentPattern.test(prompt) && lastPng && lastPng.output_image_path;
-        isRunning = true;
+        setRunning(true);
         setResult("");
         appendMessage("user", prompt || "Render this SketchUp view and create a point cloud.");
         pendingMessage = appendMessage(
           "agent",
-          shouldEdit ? "Editing the latest render..." : "Exporting viewport and running the agent pipeline...",
+          "Routing the request...",
           "pending"
         );
-        setStatus(shouldEdit ? "Editing..." : "Running...");
+        setStatus("Routing...");
         promptInput.value = "";
-        if (shouldEdit) {
-          sketchup.edit_image(JSON.stringify({
-            image_path: lastPng.output_image_path,
-            prompt: prompt
-          }));
-          return;
-        }
-        sketchup.run_agent(JSON.stringify({
+        sketchup.orchestrate_agent(JSON.stringify({
           style: style.value,
           user_prompt: prompt,
+          latest_png_path: lastPng && lastPng.output_image_path ? lastPng.output_image_path : null,
+          temporary_text_to_image_prompt: temporaryTextToImagePrompt,
           view: {
             yaw: 0,
             pitch: 0,
@@ -551,7 +575,7 @@
           setResult(payload);
         },
         receiveRenderResult(payload) {
-          isRunning = false;
+          setRunning(false);
           removePendingMessage();
           setStatus(payload.status === "success" ? "Render complete." : "Render failed.");
           setResult(payload);
@@ -587,7 +611,7 @@
           setResult(payload);
         },
         receivePointCloudResult(payload) {
-          isRunning = false;
+          setRunning(false);
           removePendingMessage();
           setStatus(payload.status === "success" ? "Point cloud complete." : "Point cloud failed.");
           if (payload.status === "success") {
@@ -620,20 +644,38 @@
           setResult(payload);
         },
         receiveEditImageResult(payload) {
-          isRunning = false;
+          setRunning(false);
           removePendingMessage();
           setStatus(payload.status === "success" ? "Edit complete." : "Edit failed.");
           appendEditResult(payload);
           setResult(payload);
         },
         receiveAgentResult(payload) {
-          isRunning = false;
+          setRunning(false);
           removePendingMessage();
           setStatus(payload.status === "success" ? "Done." : "Agent failed.");
           appendAgentResult(payload);
           setResult(payload);
+        },
+        receiveOrchestrateResult(payload) {
+          setRunning(false);
+          removePendingMessage();
+          if (payload.text_to_image_prompt) {
+            temporaryTextToImagePrompt = payload.text_to_image_prompt;
+          }
+          setStatus(payload.status === "success" ? `Intent: ${payload.intent}` : "Agent failed.");
+          if (payload.intent === "edit") {
+            appendEditResult(payload.png || payload);
+          } else if (payload.intent === "generate") {
+            appendAgentResult(payload);
+          } else {
+            appendMessage("agent", payload.message || payload.error_message || "I need more information.");
+          }
+          setResult(payload);
         }
       };
+
+      chatButton.addEventListener("click", runAgentPipeline);
 
       promptInput.addEventListener("keydown", (event) => {
         if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {

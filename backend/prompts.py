@@ -1,7 +1,8 @@
 from dataclasses import dataclass
+import json
 import re
 
-from schemas import PromptSuggestionRequest, PromptSuggestionResponse, RenderRequest
+from schemas import AgentOrchestrateRequest, AgentRunRequest, PromptSuggestionRequest, PromptSuggestionResponse, RenderRequest
 from style_presets import get_style_preset
 
 
@@ -10,6 +11,19 @@ AGENT_SYSTEM_PROMPT = (
     "generate_point_cloud with the generated image path. Preserve the existing "
     "SketchUp camera, layout, and geometry."
 )
+
+ORCHESTRATOR_INTENT_SYSTEM_PROMPT = (
+    "Classify the user's Architech request as exactly one intent: "
+    "generate, edit, discuss, or other. "
+    "Use edit when the user wants to alter/add/remove content in the latest image and latest_png_available is true. "
+    "Use generate for new render/image creation. "
+    "Use discuss for design brainstorming or prompt drafting without tool calls. "
+    "Return JSON with intent, assigned_agent, message, and optional text_to_image_prompt."
+)
+
+GENERATE_PNG_TOOL_DESCRIPTION = "Generate a rendered PNG from the current SketchUp viewport and user prompt."
+
+GENERATE_POINT_CLOUD_TOOL_DESCRIPTION = "Convert the generated PNG into a color point cloud using Depth Anything V2."
 
 IMAGE_REFERENCE_INSTRUCTION = (
     "Use the supplied SketchUp viewport image as the visual reference. "
@@ -117,6 +131,24 @@ def compose_image_generation_prompt(prompt: PromptSuggestionResponse) -> str:
 def compose_image_edit_prompt(user_prompt: str, negative_prompt: str | None = None) -> str:
     avoid = negative_prompt or GENERIC_NEGATIVE_PROMPT
     return f"{user_prompt.strip()}\n\n{IMAGE_EDIT_REFERENCE_INSTRUCTION} Avoid: {avoid}."
+
+
+def compose_agent_user_message(request: AgentRunRequest) -> str:
+    return (
+        f"Style: {request.style}\n"
+        f"User prompt: {request.user_prompt or ''}\n"
+        f"Output point cloud format: {request.pointcloud_output_format}"
+    )
+
+
+def compose_intent_classifier_user_message(request: AgentOrchestrateRequest) -> str:
+    return json.dumps(
+        {
+            "user_prompt": request.user_prompt,
+            "latest_png_available": bool(request.latest_png_path),
+            "temporary_text_to_image_prompt": request.temporary_text_to_image_prompt,
+        }
+    )
 
 
 def assess_agent_readiness(user_prompt: str | None) -> AgentReadiness:

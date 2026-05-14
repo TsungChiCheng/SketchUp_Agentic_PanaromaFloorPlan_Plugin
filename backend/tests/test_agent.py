@@ -1,6 +1,13 @@
 from agent import suggest_prompt
-from prompts import AGENT_SYSTEM_PROMPT, assess_agent_readiness
-from schemas import PromptSuggestionRequest, RenderRequest
+from prompts import (
+    AGENT_SYSTEM_PROMPT,
+    GENERATE_PNG_TOOL_DESCRIPTION,
+    ORCHESTRATOR_INTENT_SYSTEM_PROMPT,
+    assess_agent_readiness,
+    compose_agent_user_message,
+    compose_intent_classifier_user_message,
+)
+from schemas import AgentOrchestrateRequest, AgentRunRequest, PromptSuggestionRequest, RenderRequest
 from test_schemas import valid_render_payload
 
 
@@ -31,6 +38,22 @@ def test_prompt_generation_warns_on_missing_materials_and_prompt() -> None:
 def test_agent_prompt_definitions_are_centralized() -> None:
     assert "Call generate_png first" in AGENT_SYSTEM_PROMPT
     assert "generate_point_cloud" in AGENT_SYSTEM_PROMPT
+    assert "generate, edit, discuss, or other" in ORCHESTRATOR_INTENT_SYSTEM_PROMPT
+    assert "current SketchUp viewport" in GENERATE_PNG_TOOL_DESCRIPTION
+
+
+def test_agent_prompt_message_builders_are_centralized() -> None:
+    render_request = AgentRunRequest.model_validate(valid_render_payload())
+
+    agent_message = compose_agent_user_message(render_request)
+    classifier_request = AgentOrchestrateRequest.model_validate(
+        {**valid_render_payload(), "latest_png_path": "/app/outputs/render.png"}
+    )
+    classifier_message = compose_intent_classifier_user_message(classifier_request)
+
+    assert "User prompt:" in agent_message
+    assert "Output point cloud format:" in agent_message
+    assert "latest_png_available" in classifier_message
 
 
 def test_agent_readiness_rejects_conversational_greeting() -> None:

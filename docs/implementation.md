@@ -72,6 +72,7 @@ The depth service currently uses deterministic fallback depth. Replace `estimate
 
 - input image path validation
 - output OBJ/PLY/LAS writing
+- coordinate convention: `x` is image horizontal, `y` is max-depth-shifted estimated depth (`max_depth - depth`), and `z` is image vertical/up shifted so the minimum Z is 0
 - preview generation
 - response schema
 - tests using mocked or fixture depth output

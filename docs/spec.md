@@ -139,7 +139,7 @@ The tools are structured so they can later be exposed through an MCP server with
 
 ## Point-Cloud Format
 
-Default output is colored PLY plus a depth preview PNG. PLY is chosen as the open point-cloud interchange format. LAS remains available through `output_format` for Scan Essentials or external point-cloud workflows, and OBJ remains available as an optional mesh export.
+Default output is colored PLY plus a depth preview PNG. PLY is chosen as the open point-cloud interchange format. Generated coordinates use `x` for image horizontal, `y` for max-depth-shifted estimated depth (`max_depth - depth`), and `z` for image vertical/up shifted so the minimum Z is 0. LAS remains available through `output_format` for Scan Essentials or external point-cloud workflows, and OBJ remains available as an optional mesh export.
 
 ## Depth Model Runtime
 

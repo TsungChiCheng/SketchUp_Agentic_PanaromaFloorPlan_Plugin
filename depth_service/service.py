@@ -96,15 +96,23 @@ def rgbd_to_point_grid(image: Image.Image, depth: Image.Image, fov_degrees: floa
     cy = height / 2.0
     rgb = image.load()
     depth_pixels = depth.load()
+    samples = []
+    for y in range(0, height, step):
+        for x in range(0, width, step):
+            depth_distance = 0.5 + (depth_pixels[x, y] / 255.0) * 9.5
+            pz = ((cy - y) / focal) * depth_distance
+            samples.append((x, y, depth_distance, pz))
+    max_depth = max((sample[2] for sample in samples), default=0.0)
+    min_z = min((sample[3] for sample in samples), default=0.0)
     rows = []
     for y in range(0, height, step):
         row = []
         for x in range(0, width, step):
-            z = 0.5 + (depth_pixels[x, y] / 255.0) * 9.5
-            px = ((x - cx) / focal) * z
-            py = ((cy - y) / focal) * z
+            depth_distance = 0.5 + (depth_pixels[x, y] / 255.0) * 9.5
+            px = ((x - cx) / focal) * depth_distance
+            pz = ((cy - y) / focal) * depth_distance
             r, g, b = rgb[x, y]
-            row.append((px, py, z, r, g, b))
+            row.append((px, max_depth - depth_distance, pz - min_z, r, g, b))
         rows.append(row)
     return rows
 

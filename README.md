@@ -143,7 +143,7 @@ Available PNG providers:
 
 ## Depth Service
 
-The `depth-service` container owns point-cloud generation. It accepts PNG/JPEG images from shared `exports/` or `outputs/`, estimates depth, projects RGB-D pixels into 3D points, and writes colored PLY output by default. LAS and OBJ remain available through `output_format`.
+The `depth-service` container owns point-cloud generation. It accepts PNG/JPEG images from shared `exports/` or `outputs/`, estimates depth, projects RGB-D pixels into 3D points, and writes colored PLY output by default. Generated point clouds use `x` for image horizontal, `y` for max-depth-shifted estimated depth (`max_depth - depth`), and `z` for image vertical/up shifted so the minimum Z is 0. LAS and OBJ remain available through `output_format`.
 
 The current code has a deterministic fallback depth estimator so the pipeline and tests run without model weights. The service boundary and `DEPTH_MODEL` setting are prepared for replacing that fallback with Depth Anything V2 model inference.
 

@@ -38,6 +38,34 @@ def test_depth_service_generates_ply_and_preview_by_default(monkeypatch, tmp_pat
     assert Path(body["preview_image_path"]).exists()
 
 
+def test_depth_service_maps_depth_to_positive_shifted_y_axis() -> None:
+    from service import rgbd_to_point_grid
+
+    image = Image.new("RGB", (3, 3), (120, 90, 60))
+    depth = Image.new("L", (3, 3), 0)
+    depth.putpixel((1, 1), 255)
+
+    point = rgbd_to_point_grid(image, depth, 90.0)[1][1]
+    shallower_point = rgbd_to_point_grid(image, depth, 90.0)[0][0]
+
+    assert point[1] == 0.0
+    assert shallower_point[1] == 9.5
+    assert point[2] != point[1]
+
+
+def test_depth_service_shifts_z_axis_above_zero() -> None:
+    from service import flatten_point_grid, rgbd_to_point_grid
+
+    image = Image.new("RGB", (3, 3), (120, 90, 60))
+    depth = Image.new("L", (3, 3), 255)
+
+    points = flatten_point_grid(rgbd_to_point_grid(image, depth, 90.0))
+    z_values = [point[2] for point in points]
+
+    assert min(z_values) == 0.0
+    assert all(z >= 0.0 for z in z_values)
+
+
 def test_depth_service_can_generate_obj(monkeypatch, tmp_path: Path) -> None:
     output_dir = tmp_path / "outputs"
     pointcloud_dir = tmp_path / "pointclouds"

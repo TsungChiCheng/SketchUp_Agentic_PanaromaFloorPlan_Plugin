@@ -8,7 +8,7 @@
 - Agent system prompts, tool descriptions, image prompts, intent-classifier prompts, and prompt message builders are all defined in `backend/prompts.py`.
 - Point-cloud generation is wrapped by `backend/point_cloud_tool.py`.
 - Agent pipeline execution is implemented in `backend/agent_pipeline.py` with a LangChain/OpenAI tool-calling path and deterministic fallback.
-- Dialog intent routing is implemented in `backend/orchestrator.py` and dispatches to generate, edit, discuss, or clarification paths.
+- Dialog intent routing is implemented in `backend/orchestrator.py` and dispatches to generate, edit, discuss, floor-plan discussion, floor-plan plot, or clarification paths.
 - Depth processing is isolated in `depth_service/`.
 - Docker Compose runs `backend` and `depth-service` with shared artifact directories.
 
@@ -36,6 +36,7 @@ SketchUp plugin -> /uploads/viewport -> backend exports/*.png
 /edit/image -> outputs/*.png
 /generate/point-cloud -> pointclouds/*.ply by default + pointclouds/*_depth_preview.png
 /agent/run -> outputs/*.png + pointclouds/*.ply by default
+/agent/orchestrate floor_plan_plot -> outputs/*.svg + outputs/*.layout.json + outputs/*.png placeholder
 SketchUp plugin -> /artifacts/download -> local outputs/ and pointclouds/
 ```
 
@@ -50,9 +51,11 @@ If the LLM path cannot import, plan, call tools, or complete both artifacts, the
 
 Before either agent path runs, `assess_agent_readiness()` rejects conversational-only or underspecified prompts so inputs such as `Hi` do not generate artifacts.
 
-`/agent/orchestrate` is the SketchUp dialog entrypoint. It classifies user intent into `generate`, `edit`, `discuss`, or `other`, then dispatches to the matching sub-agent/tool path. Edit requests require a latest PNG path and call the image edit tool instead of `/agent/run`.
+`/agent/orchestrate` is the SketchUp dialog entrypoint. It classifies user intent into `generate`, `edit`, `discuss`, `floor_plan_discuss`, `floor_plan_plot`, or `other`, then dispatches to the matching sub-agent/tool path. Edit requests require a latest PNG path and call the image edit tool instead of `/agent/run`.
 
-The dialog's visible `Chat` button and hidden keyboard shortcut (`Cmd+Enter` on macOS, `Ctrl+Enter` elsewhere) both call the same `runAgentPipeline()` path, which sends the request to `orchestrate_agent`.
+The dialog's visible `Chat` button and hidden keyboard shortcut (`Cmd+Enter` on macOS, `Ctrl+Enter` elsewhere) both call the same `runAgentPipeline()` path, which sends the request to `orchestrate_agent`. The `Plot Floor Plan` button also prefers `orchestrate_agent`, sending `user_prompt: "plot the floor plan"` with the current `temporary_floor_plan_draft`; the separate `plot_floor_plan` bridge is kept only as a fallback.
+
+Floor-plan follow-up classification is owned by the LLM intent classifier. The classifier user message includes the existing `temporary_floor_plan_draft` JSON, which lets prompts like `Office 7x9 adjacent with a door` update the current draft without frontend room-name rules.
 
 ## SketchUp Import Tools
 
@@ -92,7 +95,9 @@ docker compose run --rm depth-service pytest tests -q
 - Call `/generate/point-cloud` with the generated PNG path.
 - Call `/agent/run` and confirm both PNG and point-cloud artifacts are returned.
 - Call `/agent/orchestrate` with a latest PNG path and an edit prompt, then confirm it calls the edit path.
+- Call `/agent/orchestrate` with a `temporary_floor_plan_draft` and `user_prompt: "plot the floor plan"`, then confirm it returns SVG, decoration JSON, and PNG placeholder artifacts.
 - In SketchUp, render from the plugin dialog and verify previews still work.
+- In SketchUp, discuss a floor plan, add a follow-up room, click `Plot Floor Plan`, and verify backend logs show `/uploads/viewport`, `/agent/orchestrate`, `FloorPlanDecorationTool`, and `FloorPlanPlotTool`.
 - Confirm the composer shows the `Chat` button and no visible shortcut hint.
 - Reveal the generated geometry file from the plugin dialog.
 - Reveal the generated PLY from the plugin dialog.

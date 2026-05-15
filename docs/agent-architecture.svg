@@ -1,12 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="760" viewBox="0 0 1120 760" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="820" viewBox="0 0 1180 820" role="img" aria-labelledby="title desc">
   <title id="title">Architech Agent Architecture</title>
-  <desc id="desc">Architecture diagram showing SketchUp dialog, remote backend upload and download endpoints, orchestrator intent routing, sub-agent paths, image tools, depth service, and local artifacts.</desc>
+  <desc id="desc">Architecture diagram showing SketchUp dialog orchestration, LLM intent routing with existing floor-plan draft JSON, LLM-supported floor-plan decoration and SVG plotting tools, image tools, depth service, artifact download, and SVG preview viewer.</desc>
   <defs>
     <style>
       .bg { fill: #f7f8fa; }
       .box { fill: #ffffff; stroke: #cfd6df; stroke-width: 1.2; rx: 8; }
       .group { fill: #eef2f7; stroke: #c3ccd8; stroke-width: 1.2; rx: 10; }
       .accent { fill: #eef6ff; stroke: #94b7e8; stroke-width: 1.2; rx: 8; }
+      .plan { fill: #f4f0ff; stroke: #aa93d5; stroke-width: 1.2; rx: 8; }
       .decision { fill: #fff7e8; stroke: #e1b564; stroke-width: 1.2; }
       .store { fill: #f2fbf6; stroke: #8bc79d; stroke-width: 1.2; rx: 8; }
       .title { fill: #202124; font: 700 22px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -24,100 +25,128 @@
     </marker>
   </defs>
 
-  <rect class="bg" width="1120" height="760"/>
+  <rect class="bg" width="1180" height="820"/>
   <text class="title" x="40" y="42">Architech Agent Architecture</text>
-  <text class="m" x="40" y="64">Current flow: SketchUp sends all chat prompts to backend orchestration; backend classifies intent and dispatches tools.</text>
+  <text class="m" x="40" y="64">Chat and Plot Floor Plan route through /agent/orchestrate; the LLM classifier receives existing draft JSON.</text>
 
-  <rect class="group" x="36" y="92" width="268" height="530"/>
+  <rect class="group" x="36" y="92" width="286" height="586"/>
   <text class="h" x="56" y="122">SketchUp machine</text>
 
-  <rect class="box" x="56" y="148" width="220" height="78"/>
+  <rect class="box" x="56" y="148" width="238" height="92"/>
   <text class="h" x="76" y="174">Agent Dialog</text>
-  <text class="t" x="76" y="195">Chat button + prompt + style</text>
-  <text class="m" x="76" y="212">latest_png_path, temp prompt</text>
+  <text class="t" x="76" y="195">Chat, Plot Floor Plan, previews</text>
+  <text class="m" x="76" y="213">latest_png_path</text>
+  <text class="m" x="76" y="229">temporary_floor_plan_draft</text>
 
-  <rect class="box" x="56" y="260" width="220" height="78"/>
-  <text class="h" x="76" y="286">SketchUp Ruby Bridge</text>
-  <text class="t" x="76" y="307">Export viewport PNG</text>
-  <text class="m" x="76" y="324">Callback: orchestrate_agent</text>
+  <rect class="box" x="56" y="278" width="238" height="82"/>
+  <text class="h" x="76" y="304">SketchUp Ruby Bridge</text>
+  <text class="t" x="76" y="325">Export viewport PNG</text>
+  <text class="m" x="76" y="342">Callback: orchestrate</text>
+  <text class="m" x="76" y="356">Direct plot callback is fallback</text>
 
-  <rect class="store" x="56" y="548" width="220" height="52"/>
-  <text class="h" x="76" y="574">Local Artifacts</text>
-  <text class="m" x="76" y="592">outputs/ and pointclouds/</text>
+  <rect class="store" x="56" y="594" width="238" height="58"/>
+  <text class="h" x="76" y="620">Local Artifacts</text>
+  <text class="m" x="76" y="638">outputs/, pointclouds/</text>
 
-  <rect class="group" x="364" y="92" width="700" height="600"/>
-  <text class="h" x="384" y="122">Remote backend machine</text>
+  <rect class="group" x="366" y="92" width="758" height="700"/>
+  <text class="h" x="386" y="122">Backend machine</text>
 
-  <rect class="accent" x="390" y="148" width="210" height="70"/>
-  <text class="h" x="410" y="174">POST /uploads/viewport</text>
-  <text class="t" x="410" y="195">Stores exported viewport</text>
-  <text class="m" x="410" y="210">backend exports/</text>
+  <rect class="accent" x="394" y="148" width="212" height="70"/>
+  <text class="h" x="414" y="174">POST /uploads/viewport</text>
+  <text class="t" x="414" y="195">Stores exported viewport</text>
+  <text class="m" x="414" y="210">backend exports/</text>
 
-  <rect class="accent" x="660" y="148" width="230" height="70"/>
-  <text class="h" x="680" y="174">POST /agent/orchestrate</text>
-  <text class="t" x="680" y="195">Classifies user intent</text>
-  <text class="m" x="680" y="210">generate, edit, discuss, other</text>
+  <rect class="accent" x="676" y="148" width="252" height="78"/>
+  <text class="h" x="696" y="174">POST /agent/orchestrate</text>
+  <text class="t" x="696" y="195">Classifies user intent with LLM</text>
+  <text class="m" x="696" y="212">generate, edit, discuss</text>
+  <text class="m" x="696" y="226">floor_plan_discuss, floor_plan_plot</text>
 
-  <polygon class="decision" points="775,250 880,315 775,380 670,315"/>
-  <text class="h" x="730" y="306">Orchestrator</text>
-  <text class="m" x="716" y="326">intent classifier</text>
+  <polygon class="decision" points="802,258 910,323 802,388 694,323"/>
+  <text class="h" x="757" y="315">Orchestrator</text>
+  <text class="m" x="730" y="335">intent + draft JSON</text>
 
-  <rect class="box" x="390" y="270" width="190" height="74"/>
-  <text class="h" x="410" y="296">PromptGenerationAgent</text>
-  <text class="t" x="410" y="317">Refine text-to-image</text>
-  <text class="m" x="410" y="333">then generate PNG</text>
+  <rect class="box" x="394" y="270" width="196" height="74"/>
+  <text class="h" x="414" y="296">PromptGenerationAgent</text>
+  <text class="t" x="414" y="317">Refine render prompt</text>
+  <text class="m" x="414" y="333">then generate PNG</text>
 
-  <rect class="box" x="390" y="390" width="190" height="74"/>
-  <text class="h" x="410" y="416">ImageEditAgent</text>
-  <text class="t" x="410" y="437">Use latest PNG</text>
-  <text class="m" x="410" y="453">then regenerate PLY</text>
+  <rect class="box" x="394" y="382" width="196" height="74"/>
+  <text class="h" x="414" y="408">ImageEditAgent</text>
+  <text class="t" x="414" y="429">Use latest PNG</text>
+  <text class="m" x="414" y="445">then regenerate PLY</text>
 
-  <rect class="box" x="920" y="270" width="120" height="74"/>
-  <text class="h" x="940" y="296">Discuss</text>
-  <text class="t" x="940" y="317">No tools</text>
-  <text class="m" x="940" y="333">save temp prompt</text>
+  <rect class="plan" x="654" y="430" width="214" height="86"/>
+  <text class="h" x="674" y="456">FloorPlanDiscussionAgent</text>
+  <text class="t" x="674" y="477">Capture rooms, sizes</text>
+  <text class="m" x="674" y="493">adjacency, openings, labels</text>
 
-  <rect class="box" x="920" y="390" width="120" height="74"/>
-  <text class="h" x="940" y="416">Other</text>
-  <text class="t" x="940" y="437">Clarify</text>
-  <text class="m" x="940" y="453">no tool call</text>
+  <rect class="plan" x="654" y="532" width="214" height="74"/>
+  <text class="h" x="674" y="558">FloorPlanDecorationTool</text>
+  <text class="t" x="674" y="579">Furniture + door JSON</text>
+  <text class="m" x="674" y="595">rooms, x/y, sizes, swings</text>
 
-  <rect class="accent" x="390" y="510" width="190" height="58"/>
-  <text class="h" x="410" y="536">Image tools</text>
-  <text class="m" x="410" y="554">generate_png, edit_image</text>
+  <rect class="plan" x="654" y="626" width="214" height="74"/>
+  <text class="h" x="674" y="652">FloorPlanPlotTool</text>
+  <text class="t" x="674" y="673">Plot SVG from JSON</text>
+  <text class="m" x="674" y="689">SVG + PNG placeholder</text>
 
-  <rect class="accent" x="660" y="510" width="190" height="58"/>
-  <text class="h" x="680" y="536">Depth service</text>
-  <text class="m" x="680" y="554">PNG to PLY/LAS/OBJ</text>
+  <rect class="box" x="956" y="270" width="140" height="74"/>
+  <text class="h" x="976" y="296">Discuss</text>
+  <text class="t" x="976" y="317">No tools</text>
+  <text class="m" x="976" y="333">save temp prompt</text>
 
-  <rect class="store" x="390" y="612" width="460" height="50"/>
-  <text class="h" x="410" y="638">Backend Artifacts</text>
-  <text class="m" x="410" y="656">exports/, outputs/, pointclouds/</text>
+  <rect class="box" x="956" y="382" width="140" height="74"/>
+  <text class="h" x="976" y="408">Other</text>
+  <text class="t" x="976" y="429">Clarify</text>
+  <text class="m" x="976" y="445">no tool call</text>
 
-  <rect class="accent" x="884" y="612" width="156" height="50"/>
-  <text class="h" x="904" y="638">/artifacts/download</text>
-  <text class="m" x="904" y="656">mirror files locally</text>
+  <rect class="accent" x="394" y="548" width="196" height="74"/>
+  <text class="h" x="414" y="574">Image tools</text>
+  <text class="m" x="414" y="592">generate_png</text>
+  <text class="m" x="414" y="608">edit_image</text>
 
-  <path class="edge" d="M166 226 L166 260"/>
-  <path class="edge" d="M276 299 C330 299 330 183 390 183"/>
-  <path class="edge" d="M600 183 L660 183"/>
-  <path class="edge" d="M775 218 L775 250"/>
-  <path class="edge" d="M670 315 L580 307"/>
-  <path class="edge" d="M670 330 L580 426"/>
-  <path class="edge" d="M880 305 L920 307"/>
-  <path class="edge" d="M880 330 L920 426"/>
-  <path class="edge" d="M485 344 L485 510"/>
-  <path class="edge" d="M485 464 L485 510"/>
-  <path class="edge" d="M580 539 L660 539"/>
-  <path class="edge" d="M755 568 L620 612"/>
-  <path class="edge" d="M485 568 L570 612"/>
-  <path class="edge" d="M850 637 L884 637"/>
-  <path class="edge" d="M884 637 C720 724 342 688 166 600"/>
-  <path class="softedge" d="M166 548 C166 488 166 390 166 338"/>
+  <rect class="accent" x="394" y="650" width="196" height="58"/>
+  <text class="h" x="414" y="676">Depth service</text>
+  <text class="m" x="414" y="694">PNG to PLY/LAS/OBJ</text>
 
-  <text class="m" x="304" y="286">upload viewport bytes</text>
-  <text class="m" x="700" y="242">route request</text>
-  <text class="m" x="600" y="496">generated PNG</text>
-  <text class="m" x="816" y="596">remote files</text>
-  <text class="m" x="476" y="714">download PNG, depth preview, and point cloud for local preview/reveal/import</text>
+  <rect class="store" x="654" y="716" width="214" height="58"/>
+  <text class="h" x="674" y="742">Backend Artifacts</text>
+  <text class="m" x="674" y="760">outputs/, pointclouds/</text>
+
+  <rect class="accent" x="926" y="716" width="170" height="58"/>
+  <text class="h" x="946" y="742">/artifacts/download</text>
+  <text class="m" x="946" y="760">mirror files locally</text>
+
+  <rect class="box" x="56" y="400" width="238" height="72"/>
+  <text class="h" x="76" y="426">SVG Preview Viewer</text>
+  <text class="t" x="76" y="447">Click thumbnail</text>
+  <text class="m" x="76" y="463">opens larger SVG dialog</text>
+
+  <path class="edge" d="M175 240 L175 278"/>
+  <path class="edge" d="M294 319 C342 319 342 183 394 183"/>
+  <path class="edge" d="M606 183 L676 183"/>
+  <path class="edge" d="M802 226 L802 258"/>
+  <path class="edge" d="M694 316 L590 307"/>
+  <path class="edge" d="M694 330 L590 419"/>
+  <path class="edge" d="M802 388 L761 430"/>
+  <path class="edge" d="M761 516 L761 532"/>
+  <path class="edge" d="M761 606 L761 626"/>
+  <path class="edge" d="M910 315 L956 307"/>
+  <path class="edge" d="M910 335 L956 419"/>
+  <path class="edge" d="M492 344 L492 548"/>
+  <path class="edge" d="M492 456 L492 548"/>
+  <path class="edge" d="M492 622 L492 650"/>
+  <path class="edge" d="M590 679 L654 745"/>
+  <path class="edge" d="M761 700 L761 716"/>
+  <path class="edge" d="M868 745 L926 745"/>
+  <path class="edge" d="M926 745 C770 800 376 752 175 652"/>
+  <path class="softedge" d="M175 594 C175 524 175 492 175 472"/>
+  <path class="softedge" d="M175 400 C175 380 175 374 175 360"/>
+
+  <text class="m" x="328" y="286">upload viewport bytes</text>
+  <text class="m" x="726" y="250">route request</text>
+  <text class="m" x="608" y="407">floor-plan draft JSON</text>
+  <text class="m" x="896" y="696">remote files</text>
+  <text class="m" x="424" y="804">download render PNG, depth preview, point cloud, floor-plan SVG, decoration JSON, and PNG placeholder</text>
 </svg>

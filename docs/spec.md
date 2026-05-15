@@ -3,12 +3,14 @@
 ## Overview
 
 Architech connects SketchUp to a local agentic rendering backend. The backend can generate a PNG render from the current SketchUp viewport, convert a flat PNG into a colored point cloud using a Depth Anything V2-compatible service, and orchestrate both steps through a LangChain/OpenAI tool-calling agent with deterministic fallback orchestration.
+It can also discuss floor-plan requirements, accumulate a structured floor-plan draft, and run LLM-supported floor-plan tools that decorate the layout as JSON and draw the final SVG with a PNG compatibility artifact.
 
 ## Goals
 
 - Generate architectural PNG renders from SketchUp viewport exports and scene metadata.
 - Convert generated or uploaded PNG images into colored PLY point-cloud artifacts by default, with LAS/OBJ artifacts available as optional formats.
 - Expose a full agent endpoint that runs PNG generation followed by point-cloud generation.
+- Add a floor-planner workflow that discusses layout details before asking LLM-supported tools to decorate the arrangement as JSON and plot a 2D plan SVG.
 - Keep the SketchUp plugin workflow local, inspectable, and testable.
 - Preserve existing mock/OpenAI PNG generation behavior, with Gemini retained as a manually configured legacy provider.
 
@@ -18,6 +20,8 @@ Architech connects SketchUp to a local agentic rendering backend. The backend ca
 - No payment, accounts, auth, or remote storage.
 - No direct `.rcp` or `.rwp` point-cloud export.
 - No automatic SketchUp geometry reconstruction from the point cloud.
+- No SketchUp geometry parsing for v1 floor-plan generation.
+- No editable drag/drop floor-planner UI in v1.
 - No mandatory Depth Anything model download during tests.
 
 ## System Components
@@ -30,6 +34,7 @@ FastAPI Backend
   /artifacts/download
   /generate/png
   /edit/image
+  /generate/floor-plan
   /generate/point-cloud
   /agent/orchestrate
   /agent/run
@@ -93,17 +98,36 @@ Returns:
 - depth model name
 - warnings
 
+### `POST /generate/floor-plan`
+
+Accepts a structured floor-plan draft:
+
+- title
+- rooms with names and approximate dimensions
+- room adjacencies
+- doors/openings
+- optional notes
+
+Returns:
+
+- LLM-tool-decorated JSON layout artifact path
+- LLM-tool-plotted SVG floor-plan artifact path
+- PNG preview artifact path
+- room count
+- warnings
+
 ### `POST /agent/orchestrate`
 
 Accepts the render request schema plus latest dialog state:
 
 - latest PNG path, when available
 - temporary text-to-image prompt, when available
+- temporary floor-plan draft, when available
 - point-cloud output format
 
-Classifies the request as `generate`, `edit`, `discuss`, or `other`, assigns the matching sub-agent, and calls only the corresponding tool path. The SketchUp dialog should call this endpoint instead of deciding edit/generate intent with frontend keyword matching.
+Classifies the request as `generate`, `edit`, `discuss`, `floor_plan_discuss`, `floor_plan_plot`, or `other`, assigns the matching sub-agent/tool path, and calls only that path. The intent classifier receives the existing `temporary_floor_plan_draft` JSON when available, so follow-up room/dimension/door messages are interpreted against the current draft by the LLM instead of frontend keyword rules.
 
-The SketchUp composer submits the same orchestration request from the visible `Chat` button or the hidden keyboard shortcut (`Cmd+Enter` on macOS, `Ctrl+Enter` elsewhere).
+The SketchUp composer submits the same orchestration request from the visible `Chat` button or the hidden keyboard shortcut (`Cmd+Enter` on macOS, `Ctrl+Enter` elsewhere). The `Plot Floor Plan` button also calls `/agent/orchestrate` with `user_prompt: "plot the floor plan"` plus the current draft; the direct `/generate/floor-plan` bridge remains a SketchUp-side fallback.
 
 ### `POST /agent/run`
 
@@ -124,6 +148,8 @@ V1 uses internal backend tools rather than a standalone MCP server:
 - `PngGenerationTool`
 - `ImageEditTool`
 - `DepthAnythingPointCloudTool`
+- `FloorPlanDecorationTool`
+- `FloorPlanPlotTool`
 - `LangChainAgentPipeline`
 - `DeterministicAgentFallback`
 
@@ -132,10 +158,26 @@ SketchUp-local import tools are implemented as dialog callbacks because importin
 - `ImportPngToSketchUp`
 - `RevealPointCloudInFinder`
 - `ImportPointCloudToSketchUp`
+- `OpenFloorPlanViewer`
 
 After artifact generation, the dialog asks the user whether to import the PNG. For geometry artifacts, the dialog always offers Reveal. PLY/LAS point-cloud import depends on a compatible importer, such as Scan Essentials. OBJ remains available as an optional mesh format.
 
 The tools are structured so they can later be exposed through an MCP server without changing the endpoint contracts.
+
+## Floor-Plan Workflow
+
+Floor-plan requests use the existing discussion flow before plotting:
+
+1. The user describes rooms, dimensions, adjacency, doors/openings, and labels.
+2. `/agent/orchestrate` updates `temporary_floor_plan_draft` and returns missing fields until the draft is ready.
+3. When the draft is complete, the SketchUp dialog offers `Plot Floor Plan`.
+4. Plotting sends `user_prompt: "plot the floor plan"` and the current `temporary_floor_plan_draft` through `/agent/orchestrate`.
+5. The backend routes `floor_plan_plot` to `/generate/floor-plan`.
+6. `FloorPlanDecorationTool` converts the draft into a decorated layout JSON plan with room positions, furniture positions/sizes, door positions/sizes, and door swing direction.
+7. `FloorPlanPlotTool` receives that decorated layout JSON and draws the authoritative furnished SVG.
+8. The dialog downloads the SVG, decoration JSON, and PNG compatibility preview artifacts, then displays the SVG preview in the chat. Clicking the small preview opens the SVG in a larger SketchUp dialog.
+
+V1 plotting is LLM-tool-authored and diagrammatic: the backend validates that enough structured details exist, then `FloorPlanDecorationTool` produces room/furniture/door arrangement as JSON and `FloorPlanPlotTool` produces the SVG drawing through the configured OpenAI model. The workflow does not infer rooms from SketchUp geometry, and plotting requires `OPENAI_API_KEY`.
 
 ## Point-Cloud Format
 
@@ -154,10 +196,14 @@ Current implementation provides deterministic fallback depth for local tests. Pr
 ## Acceptance Criteria
 
 - Backend exposes `/generate/png`, `/generate/point-cloud`, and `/agent/run`.
+- Backend exposes `/generate/floor-plan`.
 - Backend exposes `/edit/image`.
 - Backend exposes `/uploads/viewport`, `/artifacts/download`, and `/agent/orchestrate`.
 - Agent does not generate images for conversational-only prompts.
 - Agent routes edit requests with an existing latest PNG to the image edit tool instead of the text-to-image generation tool.
+- Agent routes floor-plan discussion requests to draft capture before plotting.
+- Agent classifies floor-plan follow-up prompts with the existing draft JSON instead of frontend or hardwired room-name rules.
+- Agent only allows floor-plan plotting after rooms, dimensions, adjacency, doors/openings, and labels are captured.
 - Depth service exposes `/depth/point-cloud`.
 - Agent endpoint returns both PNG and point-cloud artifacts.
 - Generated point-cloud artifacts are written under `pointclouds/`.

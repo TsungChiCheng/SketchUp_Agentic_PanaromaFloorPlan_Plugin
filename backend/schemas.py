@@ -133,6 +133,44 @@ class ImageEditRequest(StrictModel):
 
 
 PointCloudOutputFormat = Literal["ply", "las", "obj"]
+DoorWall = Literal["north", "east", "south", "west"]
+
+
+class FloorPlanRoom(StrictModel):
+    name: str = Field(min_length=1)
+    width: float = Field(gt=0)
+    depth: float = Field(gt=0)
+    label: str | None = None
+
+
+class FloorPlanDoor(StrictModel):
+    from_room: str = Field(min_length=1)
+    to_room: str | None = None
+    wall: DoorWall = "south"
+    width: float = Field(default=0.9, gt=0)
+
+
+class FloorPlanDraft(StrictModel):
+    title: str = Field(default="Floor Plan", min_length=1)
+    rooms: list[FloorPlanRoom] = Field(default_factory=list)
+    adjacencies: list[tuple[str, str]] = Field(default_factory=list)
+    doors: list[FloorPlanDoor] = Field(default_factory=list)
+    notes: str | None = None
+
+
+class FloorPlanGenerationRequest(FloorPlanDraft):
+    pass
+
+
+class FloorPlanGenerationResponse(StrictModel):
+    status: Literal["success", "failed"]
+    artifact_id: str
+    svg_path: str
+    preview_image_path: str
+    decoration_path: str | None = None
+    room_count: int = Field(ge=0)
+    warnings: list[str] = Field(default_factory=list)
+    error_message: str | None = None
 
 
 class PngGenerationRequest(RenderRequest):
@@ -199,12 +237,13 @@ class AgentRunResponse(StrictModel):
     error_message: str | None = None
 
 
-AgentIntent = Literal["generate", "edit", "discuss", "other"]
+AgentIntent = Literal["generate", "edit", "discuss", "floor_plan_discuss", "floor_plan_plot", "other"]
 
 
 class AgentOrchestrateRequest(RenderRequest):
     latest_png_path: str | None = None
     temporary_text_to_image_prompt: str | None = None
+    temporary_floor_plan_draft: FloorPlanDraft | None = None
     pointcloud_output_format: PointCloudOutputFormat = "ply"
 
 
@@ -214,7 +253,11 @@ class AgentOrchestrateResponse(StrictModel):
     assigned_agent: str
     message: str
     text_to_image_prompt: str | None = None
+    floor_plan_draft: FloorPlanDraft | None = None
+    floor_plan_ready: bool = False
+    floor_plan_missing_fields: list[str] = Field(default_factory=list)
     png: dict[str, Any] | None = None
+    floor_plan: FloorPlanGenerationResponse | None = None
     point_cloud: PointCloudGenerationResponse | None = None
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     api_calls: list[dict[str, Any]] = Field(default_factory=list)

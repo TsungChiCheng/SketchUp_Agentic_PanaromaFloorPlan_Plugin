@@ -18,8 +18,8 @@ services:
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       OPENAI_IMAGE_MODEL: "${OPENAI_IMAGE_MODEL:-gpt-image-1.5}"
       DEPTH_SERVICE_URL: "http://depth-service:8001"
-      AGENT_MODEL: "${AGENT_MODEL:-gpt-4o-mini}"
-      LOG_LEVEL: "${LOG_LEVEL:-warning}"
+      AGENT_MODEL: "${AGENT_MODEL:-gpt-4.1-mini}"
+      LOG_LEVEL: "${BACKEND_LOG_LEVEL:-info}"
     volumes:
       - ./backend:/app
       - ./exports:/app/exports
@@ -38,7 +38,7 @@ services:
       - "8000"
       - --reload
       - --log-level
-      - "${LOG_LEVEL:-warning}"
+      - "${BACKEND_LOG_LEVEL:-info}"
     healthcheck:
       test:
         - CMD
@@ -64,7 +64,7 @@ services:
       OUTPUT_DIR: /app/outputs
       POINTCLOUD_DIR: /app/pointclouds
       DEPTH_MODEL: "${DEPTH_MODEL:-depth-anything-v2-metric-indoor-small}"
-      LOG_LEVEL: "${LOG_LEVEL:-warning}"
+      LOG_LEVEL: "${DEPTH_SERVICE_LOG_LEVEL:-info}"
     volumes:
       - ./depth_service:/app
       - ./exports:/app/exports
@@ -79,7 +79,7 @@ services:
       - "8001"
       - --reload
       - --log-level
-      - "${LOG_LEVEL:-warning}"
+      - "${DEPTH_SERVICE_LOG_LEVEL:-info}"
     healthcheck:
       test:
         - CMD

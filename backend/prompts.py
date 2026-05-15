@@ -13,11 +13,14 @@ AGENT_SYSTEM_PROMPT = (
 )
 
 ORCHESTRATOR_INTENT_SYSTEM_PROMPT = (
-    "Classify the user's Architech request as exactly one intent: "
-    "generate, edit, discuss, or other. "
+    "Classify the user's Architech request as exactly one intent. "
+    "The legacy intents are generate, edit, discuss, or other; floor-plan intents are floor_plan_discuss or floor_plan_plot. "
     "Use edit when the user wants to alter/add/remove content in the latest image and latest_png_available is true. "
     "Use generate for new render/image creation. "
     "Use discuss for design brainstorming or prompt drafting without tool calls. "
+    "Use floor_plan_discuss when the user is discussing a floor plan, room layout, dimensions, doors, openings, or adjacency before plotting. "
+    "When temporary_floor_plan_draft is present, treat short room/dimension/door/adjacency messages as updates to that existing floor-plan JSON unless the user explicitly asks to plot. "
+    "Use floor_plan_plot when the user asks to plot/draw/generate the floor plan and a temporary_floor_plan_draft is available. "
     "Return JSON with intent, assigned_agent, message, and optional text_to_image_prompt."
 )
 
@@ -147,6 +150,12 @@ def compose_intent_classifier_user_message(request: AgentOrchestrateRequest) -> 
             "user_prompt": request.user_prompt,
             "latest_png_available": bool(request.latest_png_path),
             "temporary_text_to_image_prompt": request.temporary_text_to_image_prompt,
+            "temporary_floor_plan_draft_available": bool(request.temporary_floor_plan_draft),
+            "temporary_floor_plan_draft": (
+                request.temporary_floor_plan_draft.model_dump()
+                if request.temporary_floor_plan_draft
+                else None
+            ),
         }
     )
 

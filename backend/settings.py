@@ -34,6 +34,6 @@ def get_settings() -> Settings:
         gemini_api_key=os.getenv("GEMINI_API_KEY") or None,
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash-image"),
         depth_service_url=os.getenv("DEPTH_SERVICE_URL", "http://depth-service:8001").rstrip("/"),
-        agent_model=os.getenv("AGENT_MODEL", "gpt-4o-mini"),
-        log_level=os.getenv("LOG_LEVEL", "warning").strip().lower() or "warning",
+        agent_model=os.getenv("AGENT_MODEL", "gpt-4.1-mini"),
+        log_level=os.getenv("BACKEND_LOG_LEVEL", os.getenv("LOG_LEVEL", "info")).strip().lower() or "info",
     )

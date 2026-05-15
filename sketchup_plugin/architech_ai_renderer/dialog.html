@@ -164,6 +164,15 @@
         background: #f0f2f5;
       }
 
+      .preview-grid img.clickable-preview {
+        cursor: zoom-in;
+      }
+
+      .preview-grid img.clickable-preview:focus {
+        outline: 2px solid #9fb7dc;
+        outline-offset: 2px;
+      }
+
       .composer {
         border: 1px solid #d8dde6;
         border-radius: 8px;
@@ -266,10 +275,14 @@
       const resultOutput = document.getElementById("result");
       const chatButton = document.getElementById("chat");
       let isRunning = false;
+      let runningOperation = null;
+      let runningStartedAt = null;
+      let runningTimeoutId = null;
       let pendingMessage = null;
       let lastPng = null;
       let lastPointCloud = null;
       let temporaryTextToImagePrompt = "";
+      let temporaryFloorPlanDraft = null;
       let pointCloudImportCapability = {
         supported: false,
         message: "Direct SketchUp point-cloud import support was not detected."
@@ -278,9 +291,24 @@
         statusOutput.textContent = message;
       }
 
-      function setRunning(value) {
+      function setRunning(value, operation = null, timeoutMs = null) {
+        if (runningTimeoutId) {
+          clearTimeout(runningTimeoutId);
+          runningTimeoutId = null;
+        }
         isRunning = value;
+        runningOperation = value ? operation : null;
+        runningStartedAt = value ? Date.now() : null;
         chatButton.disabled = value;
+        if (value && timeoutMs) {
+          runningTimeoutId = setTimeout(() => {
+            if (!isRunning || runningOperation !== operation) return;
+            setRunning(false);
+            removePendingMessage();
+            setStatus(`${operation || "Operation"} timed out.`);
+            appendMessage("agent", `${operation || "Operation"} is taking too long. The backend may still finish; check backend logs or try again after it completes.`);
+          }, timeoutMs);
+        }
       }
 
       function setResult(value) {
@@ -321,11 +349,24 @@
         return row;
       }
 
-      function previewImage(url, alt) {
+      function previewImage(url, alt, options = {}) {
         if (!url) return null;
         const image = document.createElement("img");
         image.src = `${url}?t=${Date.now()}`;
         image.alt = alt;
+        if (options.clickable) {
+          image.tabIndex = 0;
+          image.role = "button";
+          image.title = options.title || "Open preview";
+          image.classList.add("clickable-preview");
+          image.addEventListener("click", options.onClick);
+          image.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              options.onClick();
+            }
+          });
+        }
         return image;
       }
 
@@ -412,6 +453,88 @@
 
         thread.appendChild(message);
         scrollThread();
+      }
+
+      function appendFloorPlanDraft(payload) {
+        const draft = payload.floor_plan_draft || temporaryFloorPlanDraft || {};
+        const message = document.createElement("article");
+        message.className = "message agent";
+        message.append(document.createTextNode(payload.message || "I updated the floor-plan draft."));
+        appendTimestamp(message);
+
+        const artifacts = document.createElement("div");
+        artifacts.className = "artifact-grid";
+        artifacts.append(
+          artifactCard("Rooms", (draft.rooms || []).map((room) => `${room.name} ${room.width}x${room.depth}`).join(", ") || "None"),
+          artifactCard("Missing", (payload.floor_plan_missing_fields || []).join(", ") || "Ready")
+        );
+        message.appendChild(artifacts);
+
+        if (payload.floor_plan_ready) {
+          const choices = document.createElement("div");
+          choices.className = "choice-row";
+          choices.append(choiceButton("Plot Floor Plan", () => plotFloorPlan(), { disableSiblings: false }));
+          message.appendChild(choices);
+        }
+
+        thread.appendChild(message);
+        scrollThread();
+      }
+
+      function appendFloorPlanResult(payload) {
+        const message = document.createElement("article");
+        message.className = "message agent";
+        message.append(document.createTextNode(
+          payload.status === "success"
+            ? "Done. I plotted the floor plan."
+            : (payload.error_message || "Floor-plan plotting failed.")
+        ));
+        appendTimestamp(message);
+
+        if (payload.status === "success") {
+          const artifacts = document.createElement("div");
+          artifacts.className = "artifact-grid";
+          artifacts.append(
+            artifactCard("SVG", payload.svg_path || payload.local_svg_path),
+            artifactCard("Decor", payload.decoration_path || payload.local_decoration_path),
+            artifactCard("Preview", payload.preview_image_path || payload.local_preview_image_path)
+          );
+          message.appendChild(artifacts);
+
+          const previewUrl = payload.floor_plan_svg_url || payload.floor_plan_preview_url;
+          const preview = previewImage(previewUrl, "Floor plan preview", {
+            clickable: true,
+            title: "Open floor plan in a larger window",
+            onClick: () => openFloorPlanViewer(payload)
+          });
+          if (preview) {
+            const previews = document.createElement("div");
+            previews.className = "preview-grid";
+            previews.appendChild(preview);
+            message.appendChild(previews);
+          }
+        }
+
+        thread.appendChild(message);
+        scrollThread();
+      }
+
+      function openFloorPlanViewer(payload) {
+        const svgPath = payload.local_svg_path || payload.svg_path;
+        const svgUrl = payload.floor_plan_svg_url || payload.floor_plan_preview_url;
+        if (!svgPath && !svgUrl) {
+          appendMessage("agent", "I do not have a floor-plan SVG to open.");
+          return;
+        }
+        if (!window.sketchup || typeof sketchup.open_floor_plan_viewer !== "function") {
+          appendMessage("agent", "Floor-plan viewer is unavailable. Restart SketchUp to reload the updated extension.");
+          return;
+        }
+        sketchup.open_floor_plan_viewer(JSON.stringify({
+          svg_path: svgPath,
+          svg_url: svgUrl,
+          title: payload.artifact_id ? `Floor Plan ${payload.artifact_id}` : "Floor Plan"
+        }));
       }
 
       function importChoices(png, pointCloud) {
@@ -525,6 +648,58 @@
         sketchup.generate_point_cloud(JSON.stringify({ output_image_path: outputImagePath }));
       }
 
+      function plotFloorPlan(draft = null) {
+        if (isRunning) {
+          if (runningOperation === "Floor-plan plot" && runningStartedAt) {
+            const elapsedSeconds = Math.max(1, Math.round((Date.now() - runningStartedAt) / 1000));
+            appendMessage("agent", `Still plotting the floor plan (${elapsedSeconds}s elapsed). Wait for the result or check backend logs if it takes several minutes.`);
+          } else {
+            appendMessage("agent", "I am already running a request.");
+          }
+          return;
+        }
+        const activeDraft = temporaryFloorPlanDraft || draft;
+        if (!activeDraft || !activeDraft.rooms || activeDraft.rooms.length === 0) {
+          appendMessage("agent", "I do not have enough floor-plan details to plot.");
+          return;
+        }
+        setRunning(true, "Floor-plan plot", 300000);
+        setStatus("Plotting floor plan...");
+        pendingMessage = appendMessage("agent", "Plotting the floor plan...", "pending");
+        if (!window.sketchup) {
+          removePendingMessage();
+          setRunning(false);
+          setStatus("Plot action is unavailable. Restart SketchUp to reload the extension.");
+          appendMessage("agent", "Plot Floor Plan is unavailable. Restart SketchUp to reload the updated extension.");
+          return;
+        }
+        try {
+          if (typeof sketchup.orchestrate_agent === "function") {
+            sketchup.orchestrate_agent(JSON.stringify({
+              style: style.value,
+              user_prompt: "plot the floor plan",
+              latest_png_path: lastPng && lastPng.output_image_path ? lastPng.output_image_path : null,
+              temporary_text_to_image_prompt: temporaryTextToImagePrompt,
+              temporary_floor_plan_draft: activeDraft,
+              view: {
+                yaw: 0,
+                pitch: 0,
+                roll: 0
+              }
+            }));
+          } else if (typeof sketchup.plot_floor_plan === "function") {
+            sketchup.plot_floor_plan(JSON.stringify({ floor_plan_draft: activeDraft }));
+          } else {
+            throw new Error("No floor-plan bridge callback is available.");
+          }
+        } catch (error) {
+          removePendingMessage();
+          setRunning(false);
+          setStatus("Plot action failed.");
+          appendMessage("agent", `Plot Floor Plan failed before reaching the backend: ${error.message || error}`);
+        }
+      }
+
       function removePendingMessage() {
         if (pendingMessage) {
           pendingMessage.remove();
@@ -550,6 +725,7 @@
           user_prompt: prompt,
           latest_png_path: lastPng && lastPng.output_image_path ? lastPng.output_image_path : null,
           temporary_text_to_image_prompt: temporaryTextToImagePrompt,
+          temporary_floor_plan_draft: temporaryFloorPlanDraft,
           view: {
             yaw: 0,
             pitch: 0,
@@ -644,6 +820,19 @@
           }
           setResult(payload);
         },
+        receiveFloorPlanResult(payload) {
+          setRunning(false);
+          removePendingMessage();
+          setStatus(payload.status === "success" ? "Floor plan complete." : "Floor plan failed.");
+          appendFloorPlanResult(payload);
+          setResult(payload);
+        },
+        receiveFloorPlanViewerResult(payload) {
+          if (payload.status !== "success") {
+            appendMessage("agent", payload.error_message || "Could not open the floor-plan viewer.");
+          }
+          setResult(payload);
+        },
         receiveEditImageResult(payload) {
           setRunning(false);
           removePendingMessage();
@@ -664,11 +853,18 @@
           if (payload.text_to_image_prompt) {
             temporaryTextToImagePrompt = payload.text_to_image_prompt;
           }
+          if (payload.floor_plan_draft) {
+            temporaryFloorPlanDraft = payload.floor_plan_draft;
+          }
           setStatus(payload.status === "success" ? `Intent: ${payload.intent}` : "Agent failed.");
           if (payload.intent === "edit") {
             appendEditResult(payload.png || payload);
           } else if (payload.intent === "generate") {
             appendAgentResult(payload);
+          } else if (payload.intent === "floor_plan_discuss") {
+            appendFloorPlanDraft(payload);
+          } else if (payload.intent === "floor_plan_plot") {
+            appendFloorPlanResult(payload.floor_plan || payload);
           } else {
             appendMessage("agent", payload.message || payload.error_message || "I need more information.");
           }

@@ -38,6 +38,10 @@ module Architech
         request(:post, "/generate/point-cloud", payload)
       end
 
+      def floor_plan(payload)
+        request(:post, "/generate/floor-plan", payload)
+      end
+
       def edit_image(payload)
         request(:post, "/edit/image", payload)
       end
@@ -75,7 +79,7 @@ module Architech
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = uri.scheme == "https"
         http.open_timeout = 5
-        http.read_timeout = 120
+        http.read_timeout = 300
 
         request = method == :get ? Net::HTTP::Get.new(uri) : Net::HTTP::Post.new(uri)
         request["Accept"] = "application/json"

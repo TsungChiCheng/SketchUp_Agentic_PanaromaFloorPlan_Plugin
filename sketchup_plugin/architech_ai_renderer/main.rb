@@ -44,6 +44,14 @@ module Architech
           handle_generate_point_cloud(payload)
         end
 
+        dialog.add_action_callback("plot_floor_plan") do |_context, payload|
+          handle_plot_floor_plan(payload)
+        end
+
+        dialog.add_action_callback("open_floor_plan_viewer") do |_context, payload|
+          handle_open_floor_plan_viewer(payload)
+        end
+
         dialog.add_action_callback("edit_image") do |_context, payload|
           handle_edit_image(payload)
         end
@@ -70,6 +78,20 @@ module Architech
           height: 680,
           min_width: 420,
           min_height: 520,
+          style: UI::HtmlDialog::STYLE_DIALOG
+        )
+      end
+
+      def floor_plan_viewer_dialog
+        @floor_plan_viewer_dialog ||= UI::HtmlDialog.new(
+          dialog_title: "Floor Plan",
+          preferences_key: "architech_floor_plan_viewer",
+          scrollable: true,
+          resizable: true,
+          width: 980,
+          height: 760,
+          min_width: 620,
+          min_height: 480,
           style: UI::HtmlDialog::STYLE_DIALOG
         )
       end
@@ -205,6 +227,52 @@ module Architech
         execute_js("window.ArchitechRenderer.receiveEditImageResult(#{JSON.generate(error_payload(e))})")
       end
 
+      def handle_plot_floor_plan(payload)
+        debug_log("plot_floor_plan callback received")
+        data = JSON.parse(payload)
+        draft = data.fetch("floor_plan_draft")
+        room_count = draft.fetch("rooms", []).length
+        debug_log("plot_floor_plan draft rooms=#{room_count}")
+
+        start_background_job(:plot_floor_plan, "window.ArchitechRenderer.receiveFloorPlanResult") do
+          debug_log("plot_floor_plan worker started")
+          client = RenderClient.new
+          debug_log("calling /generate/floor-plan")
+          result = client.floor_plan(draft)
+          debug_log("/generate/floor-plan returned status=#{result["status"]}")
+          result["local_svg_path"] = download_output_artifact(client, result["svg_path"]) if result["svg_path"]
+          result["floor_plan_svg_url"] = local_file_url(result["local_svg_path"]) if result["local_svg_path"]
+          result["local_decoration_path"] = download_output_artifact(client, result["decoration_path"]) if result["decoration_path"]
+          result["local_preview_image_path"] = download_output_artifact(client, result["preview_image_path"]) if result["preview_image_path"]
+          result["floor_plan_preview_url"] = local_file_url(result["local_preview_image_path"]) if result["local_preview_image_path"]
+          result
+        end
+      rescue StandardError => e
+        debug_log("plot_floor_plan failed: #{e.class}: #{e.message}")
+        execute_js("window.ArchitechRenderer.receiveFloorPlanResult(#{JSON.generate(error_payload(e))})")
+      end
+
+      def handle_open_floor_plan_viewer(payload)
+        data = JSON.parse(payload)
+        svg_path = data["svg_path"]
+        svg_url = data["svg_url"]
+        title = data["title"] || "Floor Plan"
+
+        if svg_path && !svg_path.empty?
+          path = File.expand_path(svg_path)
+          raise "Floor-plan SVG not found: #{path}" unless File.exist?(path)
+
+          svg_url = local_file_url(path)
+        end
+
+        raise "No floor-plan SVG URL is available." if !svg_url || svg_url.empty?
+
+        show_floor_plan_viewer(title, svg_url)
+      rescue StandardError => e
+        debug_log("open_floor_plan_viewer failed: #{e.class}: #{e.message}")
+        execute_js("window.ArchitechRenderer.receiveFloorPlanViewerResult(#{JSON.generate(error_payload(e))})")
+      end
+
       def handle_run_agent(payload)
         options = JSON.parse(payload)
         export_path = Exporter.export_viewport(options.fetch("view", {}))
@@ -227,6 +295,7 @@ module Architech
           point_cloud["local_preview_image_path"] = download_pointcloud_artifact(client, point_cloud["preview_image_path"]) if point_cloud["preview_image_path"]
           point_cloud["pointcloud_preview_url"] = local_file_url(point_cloud["local_preview_image_path"]) if point_cloud["local_preview_image_path"]
           result["point_cloud"] = point_cloud
+          hydrate_floor_plan_result(client, result)
           result
         end
       rescue StandardError => e
@@ -412,6 +481,7 @@ module Architech
         request = build_render_request(options, uploaded.fetch("image_path"), metadata)
         request[:latest_png_path] = options["latest_png_path"]
         request[:temporary_text_to_image_prompt] = options["temporary_text_to_image_prompt"]
+        request[:temporary_floor_plan_draft] = options["temporary_floor_plan_draft"]
         request[:pointcloud_output_format] = "ply"
         debug_log("calling /agent/orchestrate")
         result = client.orchestrate_agent(request)
@@ -455,6 +525,23 @@ module Architech
           point_cloud["pointcloud_preview_url"] = local_file_url(point_cloud["local_preview_image_path"])
         end
         result["point_cloud"] = point_cloud
+        hydrate_floor_plan_result(client, result)
+      end
+
+      def hydrate_floor_plan_result(client, result)
+        floor_plan = result["floor_plan"] || {}
+        if floor_plan["svg_path"]
+          floor_plan["local_svg_path"] = download_output_artifact(client, floor_plan["svg_path"])
+          floor_plan["floor_plan_svg_url"] = local_file_url(floor_plan["local_svg_path"])
+        end
+        if floor_plan["decoration_path"]
+          floor_plan["local_decoration_path"] = download_output_artifact(client, floor_plan["decoration_path"])
+        end
+        if floor_plan["preview_image_path"]
+          floor_plan["local_preview_image_path"] = download_output_artifact(client, floor_plan["preview_image_path"])
+          floor_plan["floor_plan_preview_url"] = local_file_url(floor_plan["local_preview_image_path"])
+        end
+        result["floor_plan"] = floor_plan unless floor_plan.empty?
       end
 
       def error_payload(error)
@@ -698,6 +785,48 @@ module Architech
 
       def local_file_url(path)
         "file://#{path.to_s.gsub(" ", "%20")}"
+      end
+
+      def show_floor_plan_viewer(title, svg_url)
+        html = <<~HTML
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1">
+              <title>#{escape_html(title)}</title>
+              <style>
+                body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f6f8; color: #202124; }
+                header { box-sizing: border-box; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #d8dde6; background: #fff; }
+                h1 { margin: 0; font-size: 15px; font-weight: 650; }
+                a { color: #153e75; font-size: 12px; text-decoration: none; }
+                main { box-sizing: border-box; height: calc(100vh - 50px); padding: 12px; }
+                .frame { width: 100%; height: 100%; border: 1px solid #d8dde6; border-radius: 8px; background: #fff; overflow: auto; }
+                img { display: block; width: 100%; height: 100%; object-fit: contain; }
+              </style>
+            </head>
+            <body>
+              <header>
+                <h1>#{escape_html(title)}</h1>
+                <a href="#{escape_html(svg_url)}">Open SVG</a>
+              </header>
+              <main>
+                <div class="frame"><img src="#{escape_html(svg_url)}" alt="Floor plan"></div>
+              </main>
+            </body>
+          </html>
+        HTML
+        viewer = floor_plan_viewer_dialog
+        viewer.set_html(html)
+        viewer.show
+      end
+
+      def escape_html(value)
+        value.to_s
+             .gsub("&", "&amp;")
+             .gsub("<", "&lt;")
+             .gsub(">", "&gt;")
+             .gsub('"', "&quot;")
       end
 
       def execute_js(script)

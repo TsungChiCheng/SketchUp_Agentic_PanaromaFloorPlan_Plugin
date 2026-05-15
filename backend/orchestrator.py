@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 
 from agent_pipeline import run_agent_pipeline
+from floor_plan_tool import FloorPlanConfigurationError, FloorPlanError, floor_plan_missing_fields, generate_floor_plan
 from point_cloud_tool import generate_point_cloud
 from prompts import ORCHESTRATOR_INTENT_SYSTEM_PROMPT, compose_intent_classifier_user_message
 from renderers import edit_image
@@ -13,6 +14,9 @@ from schemas import (
     AgentOrchestrateRequest,
     AgentOrchestrateResponse,
     AgentRunRequest,
+    FloorPlanDoor,
+    FloorPlanDraft,
+    FloorPlanGenerationRequest,
     ImageEditRequest,
     PointCloudGenerationRequest,
 )
@@ -24,6 +28,76 @@ def run_orchestrator(request: AgentOrchestrateRequest, settings: Settings) -> Ag
     classification = classify_intent(request, settings, api_calls)
     intent = classification["intent"]
     trace = ["orchestrator:start", f"orchestrator:intent:{intent}"]
+
+    if intent == "floor_plan_plot":
+        draft = request.temporary_floor_plan_draft
+        missing = floor_plan_missing_fields(FloorPlanGenerationRequest.model_validate(draft.model_dump()) if draft else None)
+        if missing:
+            return AgentOrchestrateResponse(
+                status="failed",
+                intent="floor_plan_plot",
+                assigned_agent="FloorPlanToolchain",
+                message="I need a few more floor-plan details before plotting.",
+                floor_plan_draft=draft,
+                floor_plan_ready=False,
+                floor_plan_missing_fields=missing,
+                api_calls=api_calls,
+                trace=[*trace, "orchestrator:floor_plan_missing_fields"],
+                error_message="Missing floor-plan fields: " + ", ".join(missing),
+            )
+        try:
+            api_calls.append(_api_call("tool:generate_floor_plan", request.user_prompt))
+            floor_plan = generate_floor_plan(FloorPlanGenerationRequest.model_validate(draft.model_dump()), settings)
+        except (FloorPlanConfigurationError, FloorPlanError) as exc:
+            return AgentOrchestrateResponse(
+                status="failed",
+                intent="floor_plan_plot",
+                assigned_agent="FloorPlanToolchain",
+                message=str(exc),
+                floor_plan_draft=draft,
+                floor_plan_ready=False,
+                floor_plan_missing_fields=floor_plan_missing_fields(FloorPlanGenerationRequest.model_validate(draft.model_dump())),
+                api_calls=api_calls,
+                trace=[*trace, "tool:generate_floor_plan", "orchestrator:floor_plan_failed"],
+                error_message=str(exc),
+            )
+        return AgentOrchestrateResponse(
+            status="success",
+            intent="floor_plan_plot",
+            assigned_agent="FloorPlanToolchain",
+            message="Plotted the floor plan.",
+            floor_plan_draft=draft,
+            floor_plan_ready=True,
+            floor_plan=floor_plan,
+            artifacts=[
+                {"type": "floor_plan_svg", "path": floor_plan.svg_path, "artifact_id": floor_plan.artifact_id},
+                {"type": "floor_plan_png", "path": floor_plan.preview_image_path, "artifact_id": floor_plan.artifact_id},
+                {"type": "floor_plan_decoration_json", "path": floor_plan.decoration_path, "artifact_id": floor_plan.artifact_id},
+            ],
+            api_calls=api_calls,
+            trace=[*trace, "tool:generate_floor_plan", "orchestrator:complete"],
+            warnings=floor_plan.warnings,
+        )
+
+    if intent == "floor_plan_discuss":
+        draft = update_floor_plan_draft(request.temporary_floor_plan_draft, request.user_prompt or "")
+        missing = floor_plan_missing_fields(FloorPlanGenerationRequest.model_validate(draft.model_dump()))
+        ready = not missing
+        return AgentOrchestrateResponse(
+            status="success",
+            intent="floor_plan_discuss",
+            assigned_agent="FloorPlanDiscussionAgent",
+            message=(
+                "I have enough floor-plan details to plot. Review the summary and use Plot Floor Plan when ready."
+                if ready
+                else "I updated the floor-plan draft. Please add: " + ", ".join(missing) + "."
+            ),
+            floor_plan_draft=draft,
+            floor_plan_ready=ready,
+            floor_plan_missing_fields=missing,
+            api_calls=api_calls,
+            trace=[*trace, "orchestrator:floor_plan_draft_updated"],
+        )
 
     if intent == "edit":
         if not request.latest_png_path:
@@ -95,7 +169,7 @@ def run_orchestrator(request: AgentOrchestrateRequest, settings: Settings) -> Ag
             error_message=classification.get("message") or "Unsupported request.",
         )
 
-    agent_request = AgentRunRequest.model_validate(request.model_dump(exclude={"latest_png_path", "temporary_text_to_image_prompt"}))
+    agent_request = AgentRunRequest.model_validate(request.model_dump(exclude={"latest_png_path", "temporary_text_to_image_prompt", "temporary_floor_plan_draft"}))
     generated = run_agent_pipeline(agent_request, settings)
     return AgentOrchestrateResponse(
         status=generated.status,
@@ -157,7 +231,7 @@ def classify_intent_with_openai(
 
     parsed = json.loads(content)
     intent = parsed.get("intent")
-    if intent not in {"generate", "edit", "discuss", "other"}:
+    if intent not in {"generate", "edit", "discuss", "floor_plan_discuss", "floor_plan_plot", "other"}:
         raise ValueError("Classifier returned an unsupported intent.")
     return parsed
 
@@ -166,6 +240,16 @@ def classify_intent_deterministically(request: AgentOrchestrateRequest) -> dict[
     prompt = (request.user_prompt or "").strip()
     lowered = prompt.lower()
     latest_png_available = bool(request.latest_png_path)
+    floor_plan_terms = r"\b(floor\s*plan|floorplan|plan\s+layout|room\s+layout|plot\s+plan|planner)\b"
+    plot_terms = r"\b(plot|draw|generate|create|make)\b"
+    if re.search(floor_plan_terms, lowered):
+        if re.search(plot_terms, lowered) and request.temporary_floor_plan_draft:
+            return {"intent": "floor_plan_plot", "assigned_agent": "FloorPlanToolchain", "message": "Plot the floor plan."}
+        return {
+            "intent": "floor_plan_discuss",
+            "assigned_agent": "FloorPlanDiscussionAgent",
+            "message": "Discuss and capture floor-plan details before plotting.",
+        }
     if latest_png_available and re.search(r"\b(add|insert|place|put|remove|delete|replace|change|edit|adjust|revise|update)\b", lowered):
         return {"intent": "edit", "assigned_agent": "ImageEditAgent", "message": "Edit the latest render."}
     if re.search(r"\b(idea|discuss|brainstorm|what if|suggest|concept|prompt)\b", lowered):
@@ -180,10 +264,89 @@ def classify_intent_deterministically(request: AgentOrchestrateRequest) -> dict[
     return {"intent": "other", "assigned_agent": "FallbackClarificationAgent", "message": "Please provide a rendering instruction."}
 
 
+def update_floor_plan_draft(existing: FloorPlanDraft | None, prompt: str) -> FloorPlanDraft:
+    draft = existing or FloorPlanDraft()
+    data = draft.model_dump()
+    title_match = re.search(r"(?:title|named|called)\s+['\"]?([A-Za-z0-9][A-Za-z0-9 \-]{2,60})", prompt, re.IGNORECASE)
+    if title_match:
+        data["title"] = title_match.group(1).strip()
+
+    rooms_by_name = {room["name"].lower(): room for room in data.get("rooms", [])}
+    for name, width, depth in _extract_rooms(prompt):
+        rooms_by_name[name.lower()] = {
+            "name": name,
+            "width": width,
+            "depth": depth,
+            "label": name,
+        }
+    data["rooms"] = list(rooms_by_name.values())
+
+    if len(data["rooms"]) > 1 and re.search(r"\b(adjacent|next to|connected|open to|beside|between|layout)\b", prompt, re.IGNORECASE):
+        names = [room["name"] for room in data["rooms"]]
+        data["adjacencies"] = _unique_pairs([*data.get("adjacencies", []), *zip(names, names[1:])])
+
+    if data["rooms"] and re.search(r"\b(door|doors|opening|entry|entrance)\b", prompt, re.IGNORECASE):
+        doors = [FloorPlanDoor.model_validate(door).model_dump() for door in data.get("doors", [])]
+        if data.get("adjacencies"):
+            existing_door_pairs = {
+                tuple(sorted((door["from_room"], door["to_room"])))
+                for door in doors
+                if door.get("to_room")
+            }
+            for left, right in data["adjacencies"]:
+                key = tuple(sorted((left, right)))
+                if key not in existing_door_pairs:
+                    doors.append(FloorPlanDoor(from_room=left, to_room=right, wall="east").model_dump())
+                    existing_door_pairs.add(key)
+        elif not doors:
+            rooms = data["rooms"]
+            doors.append(
+                FloorPlanDoor(
+                    from_room=rooms[0]["name"],
+                    to_room=rooms[1]["name"] if len(rooms) > 1 else None,
+                    wall="south",
+                ).model_dump()
+            )
+        data["doors"] = doors
+
+    data["notes"] = " ".join(part for part in [data.get("notes"), prompt.strip()] if part)
+    return FloorPlanDraft.model_validate(data)
+
+
+def _extract_rooms(prompt: str) -> list[tuple[str, float, float]]:
+    pattern = re.compile(
+        r"([A-Za-z][A-Za-z ]{1,40}?)\s*(?:room|area|space)?\s*(?:is|:|=)?\s*(\d+(?:\.\d+)?)\s*(?:x|by|×)\s*(\d+(?:\.\d+)?)",
+        re.IGNORECASE,
+    )
+    rooms: list[tuple[str, float, float]] = []
+    stop_words = {"and", "with", "plus", "adjacent to", "next to"}
+    for match in pattern.finditer(prompt):
+        raw_name = re.sub(r"\b(and|with|plus|adjacent to|next to)\b", "", match.group(1), flags=re.IGNORECASE).strip(" ,.;")
+        raw_name = re.sub(r"\bfloor\s*plan\b", "", raw_name, flags=re.IGNORECASE).strip(" ,.;")
+        if not raw_name or raw_name.lower() in stop_words:
+            continue
+        name = " ".join(word.capitalize() for word in raw_name.split())
+        rooms.append((name, float(match.group(2)), float(match.group(3))))
+    return rooms
+
+
+def _unique_pairs(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    seen: set[tuple[str, str]] = set()
+    unique: list[tuple[str, str]] = []
+    for left, right in pairs:
+        key = (left, right)
+        if key not in seen:
+            seen.add(key)
+            unique.append(key)
+    return unique
+
+
 def _api_call(name: str, prompt: str | None) -> dict[str, Any]:
-    return {
+    call = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "kind": "tool" if name.startswith("tool:") else "api",
         "name": name,
         "prompt": prompt or "",
     }
+    print(f"[{call['name']}] [{call['timestamp']}] [{call['prompt']}]", flush=True)
+    return call

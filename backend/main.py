@@ -6,6 +6,7 @@ from pathlib import Path
 
 from agent import suggest_prompt
 from agent_pipeline import run_agent_pipeline
+from floor_plan_tool import FloorPlanConfigurationError, FloorPlanError, generate_floor_plan
 from orchestrator import run_orchestrator
 from png_tool import generate_png
 from point_cloud_tool import PointCloudServiceError, generate_point_cloud
@@ -27,6 +28,8 @@ from schemas import (
     RenderResponse,
     ArtifactDownloadRequest,
     ArtifactDownloadResponse,
+    FloorPlanGenerationRequest,
+    FloorPlanGenerationResponse,
     ViewportUploadRequest,
     ViewportUploadResponse,
 )
@@ -45,6 +48,7 @@ def health() -> dict[str, str]:
 
 @app.post("/uploads/viewport", response_model=ViewportUploadResponse)
 def upload_viewport(request: ViewportUploadRequest) -> ViewportUploadResponse:
+    log_backend_call("POST /uploads/viewport", request.filename)
     settings = get_settings()
     try:
         image_bytes = base64.b64decode(request.content_base64, validate=True)
@@ -69,6 +73,7 @@ def upload_viewport(request: ViewportUploadRequest) -> ViewportUploadResponse:
 
 @app.post("/artifacts/download", response_model=ArtifactDownloadResponse)
 def download_artifact(request: ArtifactDownloadRequest) -> ArtifactDownloadResponse:
+    log_backend_call("POST /artifacts/download", request.path)
     settings = get_settings()
     requested = Path(request.path)
     allowed_roots = [settings.export_dir, settings.output_dir, settings.pointcloud_dir]
@@ -113,6 +118,7 @@ def suggest_render_prompt(request: PromptSuggestionRequest) -> PromptSuggestionR
 
 @app.post("/render", response_model=RenderResponse)
 def render(request: RenderRequest) -> RenderResponse:
+    log_backend_call("POST /render", request.user_prompt)
     prompt = suggest_prompt(request)
     try:
         return render_image(request, prompt, get_settings())
@@ -124,6 +130,7 @@ def render(request: RenderRequest) -> RenderResponse:
 
 @app.post("/generate/png", response_model=PngGenerationResponse)
 def generate_png_endpoint(request: PngGenerationRequest) -> PngGenerationResponse:
+    log_backend_call("POST /generate/png", request.user_prompt)
     try:
         return generate_png(request, get_settings())
     except RenderConfigurationError as exc:
@@ -145,10 +152,22 @@ def edit_image_endpoint(request: ImageEditRequest) -> RenderResponse:
 
 @app.post("/generate/point-cloud", response_model=PointCloudGenerationResponse)
 def generate_point_cloud_endpoint(request: PointCloudGenerationRequest) -> PointCloudGenerationResponse:
+    log_backend_call("POST /generate/point-cloud", request.image_path)
     try:
         return generate_point_cloud(request, get_settings())
     except PointCloudServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/generate/floor-plan", response_model=FloorPlanGenerationResponse)
+def generate_floor_plan_endpoint(request: FloorPlanGenerationRequest) -> FloorPlanGenerationResponse:
+    log_backend_call("POST /generate/floor-plan", request.title)
+    try:
+        return generate_floor_plan(request, get_settings())
+    except FloorPlanConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except FloorPlanError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/agent/run", response_model=AgentRunResponse)

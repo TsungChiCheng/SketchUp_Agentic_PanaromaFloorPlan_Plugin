@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="640" height="720" viewBox="0 0 640 720" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="1020" viewBox="0 0 640 1020" role="img" aria-labelledby="title desc">
   <title id="title">Architech Chat Agent Dialog</title>
-  <desc id="desc">Static SVG mock of the chat-style Architech agent dialog with transcript, user and agent messages, artifact cards, previews, and a bottom composer.</desc>
+  <desc id="desc">Static SVG mock of the Architech chat dialog showing floor-plan discussion, follow-up draft update, Plot Floor Plan through orchestration, decoration JSON and SVG artifacts, clickable SVG preview, and bottom composer.</desc>
   <defs>
     <style>
       .bg { fill: #f5f6f8; }
@@ -8,17 +8,21 @@
       .user { fill: #eef4ff; stroke: #b9c8e8; stroke-width: 1; }
       .soft { fill: #f0f2f5; stroke: #d8dde6; stroke-width: 1; }
       .artifact { fill: #fafbfc; stroke: #edf0f4; stroke-width: 1; }
+      .plan { fill: #f7f2ff; stroke: #d7c8f0; stroke-width: 1; }
+      .wall { fill: none; stroke: #202124; stroke-width: 3; }
+      .door { fill: none; stroke: #fbfaf7; stroke-width: 7; stroke-linecap: round; }
       .line { stroke: #edf0f4; stroke-width: 1; }
       .title { fill: #202124; font: 650 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       .text { fill: #202124; font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       .label { fill: #4d535b; font: 650 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       .muted { fill: #6f7782; font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .tiny { fill: #6f7782; font: 10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       .button { fill: #edf4ff; stroke: #9fb7dc; stroke-width: 1; }
       .buttonText { fill: #153e75; font: 650 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     </style>
   </defs>
 
-  <rect class="bg" width="640" height="720"/>
+  <rect class="bg" width="640" height="1020"/>
 
   <g transform="translate(32 24)">
     <text class="title" x="0" y="20">Architech Agent</text>
@@ -26,49 +30,87 @@
 
     <g transform="translate(0 52)">
       <rect class="panel" x="0" y="0" width="360" height="52" rx="8"/>
-      <text class="text" x="14" y="22">Ready. Tell me what to render from the</text>
-      <text class="text" x="14" y="40">current SketchUp view.</text>
+      <text class="text" x="14" y="22">Ready. Tell me what to render or plan</text>
+      <text class="text" x="14" y="40">from the current SketchUp view.</text>
     </g>
 
-    <g transform="translate(178 124)">
-      <rect class="user" x="0" y="0" width="398" height="54" rx="8"/>
-      <text class="text" x="14" y="23">Make this a warm Scandinavian bedroom,</text>
-      <text class="text" x="14" y="41">then generate a point cloud.</text>
+    <g transform="translate(138 124)">
+      <rect class="user" x="0" y="0" width="438" height="70" rx="8"/>
+      <text class="text" x="14" y="23">Floor plan with Living 12x14 and Kitchen</text>
+      <text class="text" x="14" y="41">8x10 adjacent with a door.</text>
+      <text class="tiny" x="14" y="59">Today, 3:22 PM</text>
     </g>
 
-    <g transform="translate(0 202)">
-      <rect class="panel" x="0" y="0" width="420" height="44" rx="8"/>
-      <text class="muted" x="14" y="27">Exporting viewport and running the agent pipeline...</text>
+    <g transform="translate(0 218)">
+      <rect class="panel" x="0" y="0" width="520" height="156" rx="8"/>
+      <text class="text" x="14" y="28">I have enough floor-plan details to plot.</text>
+      <text class="muted" x="14" y="48">Review the summary and use Plot Floor Plan when ready.</text>
+
+      <rect class="artifact" x="14" y="66" width="492" height="34" rx="6"/>
+      <text class="label" x="28" y="88">Rooms</text>
+      <text class="muted" x="112" y="88">Living 12x14, Kitchen 8x10</text>
+
+      <rect class="artifact" x="14" y="108" width="318" height="34" rx="6"/>
+      <text class="label" x="28" y="130">Missing</text>
+      <text class="muted" x="112" y="130">Ready</text>
+
+      <rect class="button" x="350" y="106" width="156" height="38" rx="6"/>
+      <text class="buttonText" x="383" y="130">Plot Floor Plan</text>
     </g>
 
-    <g transform="translate(0 272)">
-      <rect class="panel" x="0" y="0" width="510" height="236" rx="8"/>
-      <text class="text" x="14" y="28">Done. I generated the render and point cloud.</text>
-
-      <rect class="artifact" x="14" y="48" width="482" height="38" rx="6"/>
-      <text class="label" x="28" y="72">Render</text>
-      <text class="muted" x="112" y="72">/app/outputs/render_...</text>
-
-      <rect class="artifact" x="14" y="96" width="482" height="38" rx="6"/>
-      <text class="label" x="28" y="120">Point Cloud</text>
-      <text class="muted" x="112" y="120">/app/pointclouds/pointcloud_...</text>
-
-      <rect class="soft" x="14" y="150" width="232" height="72" rx="6"/>
-      <text class="muted" x="84" y="190">Render preview</text>
-
-      <rect class="soft" x="264" y="150" width="232" height="72" rx="6"/>
-      <text class="muted" x="334" y="190">Depth preview</text>
+    <g transform="translate(190 392)">
+      <rect class="user" x="0" y="0" width="386" height="58" rx="8"/>
+      <text class="text" x="14" y="24">Office 7x9 adjacent with a door.</text>
+      <text class="tiny" x="14" y="44">Today, 3:24 PM</text>
     </g>
 
-    <g transform="translate(0 540)">
-      <rect class="panel" x="0" y="0" width="576" height="128" rx="8"/>
-      <text class="muted" x="14" y="32">Ask Architech to render this view and create a point cloud...</text>
-      <line class="line" x1="14" y1="82" x2="562" y2="82"/>
-      <rect class="panel" x="14" y="94" width="220" height="24" rx="6"/>
-      <text class="text" x="24" y="111">Scandinavian Interior</text>
-      <path d="M214 102 l5 5 l5 -5" fill="none" stroke="#6f7782" stroke-width="1.4"/>
-      <rect class="button" x="506" y="92" width="56" height="28" rx="6"/>
-      <text class="buttonText" x="522" y="111">Chat</text>
+    <g transform="translate(0 470)">
+      <rect class="panel" x="0" y="0" width="520" height="120" rx="8"/>
+      <text class="text" x="14" y="26">I updated the floor-plan draft.</text>
+      <rect class="artifact" x="14" y="44" width="492" height="34" rx="6"/>
+      <text class="label" x="28" y="66">Rooms</text>
+      <text class="muted" x="112" y="66">Living 12x14, Kitchen 8x10, Office 7x9</text>
+      <text class="muted" x="14" y="102">Plot button sends draft JSON through /agent/orchestrate.</text>
+    </g>
+
+    <g transform="translate(0 614)">
+      <rect class="panel" x="0" y="0" width="540" height="236" rx="8"/>
+      <text class="text" x="14" y="28">Done. I plotted the floor plan.</text>
+
+      <rect class="artifact" x="14" y="48" width="512" height="34" rx="6"/>
+      <text class="label" x="28" y="70">SVG</text>
+      <text class="muted" x="112" y="70">/app/outputs/floorplan_...svg</text>
+
+      <rect class="artifact" x="14" y="90" width="512" height="34" rx="6"/>
+      <text class="label" x="28" y="112">Decor</text>
+      <text class="muted" x="112" y="112">/app/outputs/floorplan_...layout.json</text>
+
+      <rect class="artifact" x="14" y="132" width="512" height="34" rx="6"/>
+      <text class="label" x="28" y="154">PNG</text>
+      <text class="muted" x="112" y="154">/app/outputs/floorplan_...png</text>
+
+      <rect class="soft" x="14" y="178" width="220" height="44" rx="6"/>
+      <rect class="plan" x="28" y="188" width="82" height="24"/>
+      <rect class="plan" x="110" y="188" width="58" height="24"/>
+      <path class="wall" d="M28 188 h140 v24 h-140 z M110 188 v24"/>
+      <path class="door" d="M107 200 h8"/>
+      <path d="M110 200 A13 13 0 0 1 123 187" fill="none" stroke="#4d535b" stroke-width="1"/>
+      <rect x="42" y="195" width="28" height="8" rx="2" fill="#ffffff" stroke="#4d535b" stroke-width="1"/>
+      <rect x="128" y="192" width="26" height="5" fill="#ffffff" stroke="#4d535b" stroke-width="1"/>
+      <text class="tiny" x="50" y="208">Living</text>
+      <text class="tiny" x="122" y="208">Kitchen</text>
+      <text class="muted" x="248" y="202">Clickable SVG preview from Decor JSON</text>
+    </g>
+
+    <g transform="translate(0 858)">
+      <rect class="panel" x="0" y="0" width="576" height="112" rx="8"/>
+      <text class="muted" x="14" y="30">Ask Architech to render, edit, discuss, or plot a floor plan...</text>
+      <line class="line" x1="14" y1="68" x2="562" y2="68"/>
+      <rect class="panel" x="14" y="80" width="220" height="24" rx="6"/>
+      <text class="text" x="24" y="97">Modern Interior</text>
+      <path d="M214 88 l5 5 l5 -5" fill="none" stroke="#6f7782" stroke-width="1.4"/>
+      <rect class="button" x="506" y="78" width="56" height="28" rx="6"/>
+      <text class="buttonText" x="522" y="97">Chat</text>
     </g>
   </g>
 </svg>

@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import base64
 import binascii
 from datetime import datetime, timezone
@@ -12,6 +13,7 @@ from png_tool import generate_png
 from point_cloud_tool import PointCloudServiceError, generate_point_cloud
 from renderers import RenderConfigurationError, RenderServiceError, render_image
 from renderers import edit_image
+from room_render_tool import RoomRenderConfigurationError, RoomRenderError, generate_room_renders
 from schemas import (
     AgentRunRequest,
     AgentRunResponse,
@@ -26,6 +28,8 @@ from schemas import (
     PromptSuggestionResponse,
     RenderRequest,
     RenderResponse,
+    RoomRenderGenerationRequest,
+    RoomRenderGenerationResponse,
     ArtifactDownloadRequest,
     ArtifactDownloadResponse,
     FloorPlanGenerationRequest,
@@ -38,6 +42,13 @@ from settings import get_settings
 app = FastAPI(
     title="Architech AI Render Assistant API",
     version="0.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -167,6 +178,17 @@ def generate_floor_plan_endpoint(request: FloorPlanGenerationRequest) -> FloorPl
     except FloorPlanConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except FloorPlanError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/generate/room-renders", response_model=RoomRenderGenerationResponse)
+def generate_room_renders_endpoint(request: RoomRenderGenerationRequest) -> RoomRenderGenerationResponse:
+    log_backend_call("POST /generate/room-renders", request.decoration_path)
+    try:
+        return generate_room_renders(request, get_settings())
+    except RoomRenderConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except RoomRenderError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 

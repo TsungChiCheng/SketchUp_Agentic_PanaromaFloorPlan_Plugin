@@ -13,6 +13,7 @@ module Architech
     PLUGIN_ROOT = File.expand_path("..", __dir__)
     REPO_ROOT = File.expand_path("..", PLUGIN_ROOT)
     DIALOG_PATH = File.join(__dir__, "dialog.html")
+    UI_VERSION = "2026-05-16-floorplan-direct-v7"
 
     class << self
       def show_dialog
@@ -52,6 +53,10 @@ module Architech
           handle_open_floor_plan_viewer(payload)
         end
 
+        dialog.add_action_callback("generate_room_renders") do |_context, payload|
+          handle_generate_room_renders(payload)
+        end
+
         dialog.add_action_callback("edit_image") do |_context, payload|
           handle_edit_image(payload)
         end
@@ -64,7 +69,11 @@ module Architech
           handle_orchestrate_agent(payload)
         end
 
-        dialog.set_file(DIALOG_PATH)
+        dialog.add_action_callback("orchestrate_floor_plan") do |_context, payload|
+          handle_floor_plan_orchestrate_agent(payload)
+        end
+
+        dialog.set_html(dialog_html)
         dialog.show
       end
 
@@ -99,9 +108,11 @@ module Architech
       def push_initial_state
         payload = {
           backend_url: RenderClient.default_base_url,
+          ui_version: UI_VERSION,
           styles: StylePresets.all,
           point_cloud_import: point_cloud_import_capability
         }
+        debug_log("initial state backend_url=#{payload[:backend_url]}")
         execute_js("window.ArchitechRenderer.receiveInitialState(#{JSON.generate(payload)})")
       end
 
@@ -109,6 +120,11 @@ module Architech
         start_background_job(:health_check, "window.ArchitechRenderer.receiveHealth") do
           RenderClient.new.health
         end
+      end
+
+      def dialog_html
+        html = File.read(DIALOG_PATH, mode: "rb")
+        html.sub("</body>", "<!-- Architech UI #{UI_VERSION} loaded #{Time.now.utc.iso8601} --></body>")
       end
 
       def handle_submit_render(payload)
@@ -134,7 +150,7 @@ module Architech
 
       def handle_import_render(payload)
         data = JSON.parse(payload)
-        path = local_output_path(data.fetch("output_image_path"))
+        path = ensure_local_output_artifact(data.fetch("output_image_path"))
         raise "Rendered image not found: #{path}" unless File.exist?(path)
 
         model = Sketchup.active_model
@@ -151,7 +167,7 @@ module Architech
 
       def handle_import_point_cloud(payload)
         data = JSON.parse(payload)
-        path = local_pointcloud_path(data.fetch("pointcloud_path"))
+        path = ensure_local_pointcloud_artifact(data.fetch("pointcloud_path"))
         raise "Point cloud not found: #{path}" unless File.exist?(path)
 
         model = Sketchup.active_model
@@ -174,7 +190,7 @@ module Architech
 
       def handle_reveal_point_cloud(payload)
         data = JSON.parse(payload)
-        path = local_pointcloud_path(data.fetch("pointcloud_path"))
+        path = ensure_local_pointcloud_artifact(data.fetch("pointcloud_path"))
         raise "Point cloud not found: #{path}" unless File.exist?(path)
 
         revealed = reveal_file(path)
@@ -189,7 +205,7 @@ module Architech
       def handle_generate_point_cloud(payload)
         data = JSON.parse(payload)
         output_image_path = data.fetch("output_image_path")
-        local_image_path = local_output_path(output_image_path)
+        local_image_path = ensure_local_output_artifact(output_image_path)
         raise "Rendered image not found: #{local_image_path}" unless File.exist?(local_image_path)
 
         start_background_job(:generate_point_cloud, "window.ArchitechRenderer.receivePointCloudResult") do
@@ -210,7 +226,7 @@ module Architech
       def handle_edit_image(payload)
         data = JSON.parse(payload)
         output_image_path = data.fetch("image_path")
-        local_image_path = local_output_path(output_image_path)
+        local_image_path = ensure_local_output_artifact(output_image_path)
         raise "Rendered image not found: #{local_image_path}" unless File.exist?(local_image_path)
 
         start_background_job(:edit_image, "window.ArchitechRenderer.receiveEditImageResult") do
@@ -273,6 +289,25 @@ module Architech
         execute_js("window.ArchitechRenderer.receiveFloorPlanViewerResult(#{JSON.generate(error_payload(e))})")
       end
 
+      def handle_generate_room_renders(payload)
+        data = JSON.parse(payload)
+        decoration_path = data.fetch("decoration_path")
+        style = data.fetch("style", StylePresets.default)
+
+        start_background_job(:generate_room_renders, "window.ArchitechRenderer.receiveRoomRenderResult") do
+          client = RenderClient.new
+          result = client.room_renders(
+            decoration_path: decoration_path,
+            style: style,
+            selected_room_names: data["selected_room_names"] || []
+          )
+          hydrate_room_render_result(client, result)
+          result
+        end
+      rescue StandardError => e
+        execute_js("window.ArchitechRenderer.receiveRoomRenderResult(#{JSON.generate(error_payload(e))})")
+      end
+
       def handle_run_agent(payload)
         options = JSON.parse(payload)
         export_path = Exporter.export_viewport(options.fetch("view", {}))
@@ -305,21 +340,40 @@ module Architech
       def handle_orchestrate_agent(payload)
         debug_log("orchestrate callback received")
         options = JSON.parse(payload)
-        debug_log("exporting viewport")
-        export_path = Exporter.export_viewport(options.fetch("view", {}))
-        debug_log("viewport exported: #{export_path}")
-        debug_log("collecting metadata")
-        metadata = MetadataCollector.collect
-        debug_log("metadata collected")
 
-        if windows_platform?
-          start_external_orchestrate_job(options, export_path, metadata)
+        if floor_plan_orchestration?(options)
+          start_async_job(:orchestrate_agent, "window.ArchitechRenderer.receiveOrchestrateResult") do
+            run_orchestrate_request_without_viewport(options)
+          end
         else
-          result = run_orchestrate_request(options, export_path, metadata)
-          execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(result)})")
+          debug_log("exporting viewport")
+          export_path = Exporter.export_viewport(options.fetch("view", {}))
+          debug_log("viewport exported: #{export_path}")
+          debug_log("collecting metadata")
+          metadata = MetadataCollector.collect
+          debug_log("metadata collected")
+
+          if windows_platform?
+            start_external_orchestrate_job(options, export_path, metadata)
+          else
+            start_async_job(:orchestrate_agent, "window.ArchitechRenderer.receiveOrchestrateResult") do
+              run_orchestrate_request(options, export_path, metadata)
+            end
+          end
         end
       rescue StandardError => e
         debug_log("orchestrate failed: #{e.class}: #{e.message}")
+        execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(error_payload(e))})")
+      end
+
+      def handle_floor_plan_orchestrate_agent(payload)
+        debug_log("floor-plan orchestrate callback received")
+        options = JSON.parse(payload)
+        start_async_job(:orchestrate_floor_plan, "window.ArchitechRenderer.receiveOrchestrateResult") do
+          run_orchestrate_request_without_viewport(options)
+        end
+      rescue StandardError => e
+        debug_log("floor-plan orchestrate failed: #{e.class}: #{e.message}")
         execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(error_payload(e))})")
       end
 
@@ -333,6 +387,9 @@ module Architech
         request = build_render_request(options, nil, metadata)
         request[:latest_png_path] = options["latest_png_path"]
         request[:temporary_text_to_image_prompt] = options["temporary_text_to_image_prompt"]
+        request[:temporary_floor_plan_draft] = options["temporary_floor_plan_draft"]
+        request[:latest_floor_plan_decoration_path] = options["latest_floor_plan_decoration_path"]
+        request[:selected_room_names] = options["selected_room_names"] || []
         request[:pointcloud_output_format] = "ply"
         File.write(
           job_path,
@@ -458,6 +515,31 @@ module Architech
               $result.point_cloud | Add-Member -Force -NotePropertyName local_preview_image_path -NotePropertyValue $localPreview
               $result.point_cloud | Add-Member -Force -NotePropertyName pointcloud_preview_url -NotePropertyValue (File-Url $localPreview)
             }
+            if ($result.floor_plan) {
+              if ($result.floor_plan.svg_path) {
+                $localSvg = Download-Artifact $job.backend_url $job.local_project_root $result.floor_plan.svg_path
+                $result.floor_plan | Add-Member -Force -NotePropertyName local_svg_path -NotePropertyValue $localSvg
+                $result.floor_plan | Add-Member -Force -NotePropertyName floor_plan_svg_url -NotePropertyValue (File-Url $localSvg)
+              }
+              if ($result.floor_plan.decoration_path) {
+                $localDecoration = Download-Artifact $job.backend_url $job.local_project_root $result.floor_plan.decoration_path
+                $result.floor_plan | Add-Member -Force -NotePropertyName local_decoration_path -NotePropertyValue $localDecoration
+              }
+              if ($result.floor_plan.preview_image_path) {
+                $localFloorPlanPreview = Download-Artifact $job.backend_url $job.local_project_root $result.floor_plan.preview_image_path
+                $result.floor_plan | Add-Member -Force -NotePropertyName local_preview_image_path -NotePropertyValue $localFloorPlanPreview
+                $result.floor_plan | Add-Member -Force -NotePropertyName floor_plan_preview_url -NotePropertyValue (File-Url $localFloorPlanPreview)
+              }
+            }
+            if ($result.room_renders) {
+              foreach ($room in $result.room_renders.rooms) {
+                if ($room.output_image_path) {
+                  $localRoomRender = Download-Artifact $job.backend_url $job.local_project_root $room.output_image_path
+                  $room | Add-Member -Force -NotePropertyName local_output_image_path -NotePropertyValue $localRoomRender
+                  $room | Add-Member -Force -NotePropertyName render_preview_url -NotePropertyValue (File-Url $localRoomRender)
+                }
+              }
+            }
             $result | Add-Member -Force -NotePropertyName local_export_image_path -NotePropertyValue $job.export_path
             $result | Add-Member -Force -NotePropertyName export_preview_url -NotePropertyValue (File-Url $job.export_path)
             Write-Result $job.result_path $result
@@ -482,6 +564,8 @@ module Architech
         request[:latest_png_path] = options["latest_png_path"]
         request[:temporary_text_to_image_prompt] = options["temporary_text_to_image_prompt"]
         request[:temporary_floor_plan_draft] = options["temporary_floor_plan_draft"]
+        request[:latest_floor_plan_decoration_path] = options["latest_floor_plan_decoration_path"]
+        request[:selected_room_names] = options["selected_room_names"] || []
         request[:pointcloud_output_format] = "ply"
         debug_log("calling /agent/orchestrate")
         result = client.orchestrate_agent(request)
@@ -489,6 +573,23 @@ module Architech
         hydrate_orchestrator_result(client, result)
         result["local_export_image_path"] = export_path
         result["export_preview_url"] = local_file_url(export_path)
+        result
+      end
+
+      def run_orchestrate_request_without_viewport(options)
+        debug_log("floor-plan orchestrate request started without viewport export")
+        client = RenderClient.new
+        request = build_render_request(options, "floor_plan_placeholder.png", fallback_metadata)
+        request[:latest_png_path] = options["latest_png_path"]
+        request[:temporary_text_to_image_prompt] = options["temporary_text_to_image_prompt"]
+        request[:temporary_floor_plan_draft] = options["temporary_floor_plan_draft"]
+        request[:latest_floor_plan_decoration_path] = options["latest_floor_plan_decoration_path"]
+        request[:selected_room_names] = options["selected_room_names"] || []
+        request[:pointcloud_output_format] = "ply"
+        debug_log("calling /agent/orchestrate without viewport upload")
+        result = client.orchestrate_agent(request)
+        debug_log("/agent/orchestrate returned status=#{result["status"]}")
+        hydrate_orchestrator_result(client, result)
         result
       end
 
@@ -504,6 +605,30 @@ module Architech
             preserve_geometry: true,
             preserve_camera: true,
             output_resolution: "1024x1024"
+          }
+        }
+      end
+
+      def floor_plan_orchestration?(options)
+        return true if options["temporary_floor_plan_draft"]
+        return true if options["latest_floor_plan_decoration_path"]
+
+        prompt = options.fetch("user_prompt", "").to_s.downcase
+        prompt.match?(/\b(floor\s*plan|floorplan|room\s*layout|plot\s+the\s+floor\s*plan|generate\s+room\s+renders|room\s*render|text2room|adjacent|door|doors|opening|entrance|hallway|corridor)\b|\d+\s*(?:x|by|×)\s*\d+/)
+      end
+
+      def fallback_metadata
+        {
+          camera: {
+            position: [0.0, 0.0, 1.6],
+            direction: [0.0, 1.0, 0.0],
+            target: [0.0, 1.0, 1.6],
+            fov: 45.0
+          },
+          model: {
+            bounds: { width: 0.0, depth: 0.0, height: 0.0 },
+            materials: [],
+            selected_entity_count: 0
           }
         }
       end
@@ -526,6 +651,7 @@ module Architech
         end
         result["point_cloud"] = point_cloud
         hydrate_floor_plan_result(client, result)
+        hydrate_room_render_result(client, result["room_renders"]) if result["room_renders"]
       end
 
       def hydrate_floor_plan_result(client, result)
@@ -542,6 +668,17 @@ module Architech
           floor_plan["floor_plan_preview_url"] = local_file_url(floor_plan["local_preview_image_path"])
         end
         result["floor_plan"] = floor_plan unless floor_plan.empty?
+      end
+
+      def hydrate_room_render_result(client, result)
+        rooms = result["rooms"] || []
+        rooms.each do |room|
+          next unless room["output_image_path"]
+
+          room["local_output_image_path"] = download_output_artifact(client, room["output_image_path"])
+          room["render_preview_url"] = local_file_url(room["local_output_image_path"])
+        end
+        result["rooms"] = rooms
       end
 
       def error_payload(error)
@@ -596,6 +733,54 @@ module Architech
         schedule_on_ui_thread do
           unless runner_started
             debug_log("#{key} worker thread did not start; running job on SketchUp UI thread")
+            if claim_runner.call
+              run_background_job_on_ui_thread(key, js_receiver) { yield }
+            end
+          end
+        end
+      rescue StandardError => e
+        release_background_job(key)
+        execute_js("#{js_receiver}(#{JSON.generate(error_payload(e))})")
+      end
+
+      def start_async_job(key, js_receiver)
+        unless reserve_background_job(key)
+          execute_js("#{js_receiver}(#{JSON.generate(error_payload(StandardError.new("A #{key.to_s.tr("_", " ")} job is already running.")))})")
+          return
+        end
+
+        debug_log("#{key} async worker starting")
+        runner_mutex = Mutex.new
+        runner_started = false
+        claim_runner = lambda do
+          runner_mutex.synchronize do
+            next false if runner_started
+
+            runner_started = true
+            true
+          end
+        end
+        thread = Thread.new do
+          next unless claim_runner.call
+
+          begin
+            payload = yield
+          rescue StandardError => e
+            debug_log("#{key} async worker failed: #{e.class}: #{e.message}")
+            payload = error_payload(e)
+          end
+
+          schedule_on_ui_thread do
+            debug_log("#{key} async worker delivering result status=#{payload["status"]}")
+            release_background_job(key)
+            execute_js("#{js_receiver}(#{JSON.generate(payload)})")
+          end
+        end
+        thread.run if thread.respond_to?(:run)
+        Thread.pass if Thread.respond_to?(:pass)
+        schedule_on_ui_thread do
+          unless runner_started
+            debug_log("#{key} async worker thread did not start; running job on SketchUp UI thread")
             if claim_runner.call
               run_background_job_on_ui_thread(key, js_receiver) { yield }
             end
@@ -771,6 +956,26 @@ module Architech
         else
           path
         end
+      end
+
+      def ensure_local_output_artifact(path_value)
+        local_path = local_output_path(path_value)
+        return local_path if File.exist?(local_path)
+        return local_path unless path_value.to_s.start_with?("/app/outputs/")
+
+        debug_log("downloading output artifact on demand: #{path_value}")
+        RenderClient.new.download_artifact(path_value, local_path)
+        local_path
+      end
+
+      def ensure_local_pointcloud_artifact(path_value)
+        local_path = local_pointcloud_path(path_value)
+        return local_path if File.exist?(local_path)
+        return local_path unless path_value.to_s.start_with?("/app/pointclouds/")
+
+        debug_log("downloading point-cloud artifact on demand: #{path_value}")
+        RenderClient.new.download_artifact(path_value, local_path)
+        local_path
       end
 
       def local_project_root

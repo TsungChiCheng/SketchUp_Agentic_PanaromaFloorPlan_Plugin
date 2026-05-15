@@ -19,6 +19,7 @@ services:
       OPENAI_IMAGE_MODEL: "${OPENAI_IMAGE_MODEL:-gpt-image-1.5}"
       DEPTH_SERVICE_URL: "http://depth-service:8001"
       AGENT_MODEL: "${AGENT_MODEL:-gpt-4.1-mini}"
+      FLOOR_PLAN_TOOL_TIMEOUT_SECONDS: "${FLOOR_PLAN_TOOL_TIMEOUT_SECONDS:-180}"
       LOG_LEVEL: "${BACKEND_LOG_LEVEL:-info}"
     volumes:
       - ./backend:/app

@@ -9,8 +9,9 @@ The current pipeline can:
 - Upload the active SketchUp viewport to a local or remote backend.
 - Generate or edit PNG render images with the configured render provider.
 - Convert generated PNGs into colored PLY point clouds through the depth service.
-- Route dialog messages through `/agent/orchestrate` so generate, edit, discuss, floor-plan discussion, plotting, and clarification flows are handled by the backend instead of frontend keyword checks.
+- Route dialog messages through `/agent/orchestrate` so generate, edit, discuss, floor-plan discussion, plotting, room-render generation, and clarification flows are handled by the backend instead of frontend keyword checks.
 - Discuss floor-plan requirements, keep the structured draft in dialog state, then use Plot Floor Plan to send that draft back through `/agent/orchestrate` for LLM-supported decoration JSON and SVG plotting.
+- Generate room-level interior PNGs from the plotted floor-plan decoration JSON through the same backend orchestrator flow.
 - Download generated backend artifacts back to the SketchUp machine for preview, reveal, and import actions.
 
 Detailed endpoint contracts, coordinate conventions, limits, and implementation notes live in `docs/`.
@@ -116,15 +117,18 @@ Key files:
 
 ![SketchUp Agentic text2image Plugin agent architecture](docs/agent-architecture.svg)
 
-The normal SketchUp dialog path exports the viewport, uploads it to the backend, calls `/agent/orchestrate`, runs the selected tool path, downloads artifacts, then previews/reveals/imports them locally. The Plot Floor Plan button uses this same orchestration bridge with `user_prompt: "plot the floor plan"` plus the current `temporary_floor_plan_draft`; the older direct `plot_floor_plan` callback is only a fallback.
+Render and edit flows export the SketchUp viewport through the Ruby bridge, upload it to the backend, call `/agent/orchestrate`, run the selected tool path, download artifacts, then preview/reveal/import them locally. Floor-plan chat prompts, `Plot Floor Plan`, and `Generate Room Renders` use a direct HtmlDialog `fetch` to `${backend_url}/agent/orchestrate`; these flows send draft or decoration JSON state and do not upload the viewport. The dialog then downloads SVG, PNG, and room-render artifacts through `/artifacts/download` for local previews.
 
-`/agent/orchestrate` classifies each message into rendering, editing, discussion, floor-planning, or clarification intents:
+SketchUp-local actions still run through Ruby callbacks because they need access to `Sketchup.active_model`: opening the large floor-plan viewer for local files, importing render PNGs, revealing point-cloud files, and importing supported point-cloud formats.
+
+`/agent/orchestrate` classifies each message into rendering, editing, discussion, floor-planning, room-rendering, or clarification intents:
 
 - `generate`: refine the text-to-image direction, generate a PNG, then generate a point cloud.
 - `edit`: use the latest generated PNG, call the image edit tool, then regenerate the point cloud.
 - `discuss`: update the temporary text-to-image direction without calling render tools.
 - `floor_plan_discuss`: update a structured floor-plan draft and report missing required details. The LLM intent classifier receives the existing draft JSON so short follow-up prompts such as `Office 7x9 adjacent with a door` can continue the same draft.
 - `floor_plan_plot`: plot a complete floor-plan draft as SVG plus PNG preview artifacts through `FloorPlanDecorationTool` and `FloorPlanPlotTool`.
+- `room_render_generate`: generate room-level interior PNGs from the latest floor-plan decoration JSON through the room render tool.
 - `other`: ask for clarification or return a no-tool response.
 
 The lower-level `/agent/run` endpoint still exists for direct PNG-to-point-cloud agent execution. It rejects underspecified conversational input, uses LangChain/OpenAI tool calling when configured, and falls back to deterministic PNG then point-cloud orchestration when the model path is unavailable.

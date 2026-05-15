@@ -173,6 +173,43 @@ class FloorPlanGenerationResponse(StrictModel):
     error_message: str | None = None
 
 
+class RoomRenderGenerationRequest(StrictModel):
+    decoration_path: str = Field(min_length=1)
+    style: str = Field(min_length=1)
+    selected_room_names: list[str] = Field(default_factory=list)
+    output_resolution: OutputResolution = "1024x1024"
+
+    @field_validator("decoration_path")
+    @classmethod
+    def validate_decoration_path(cls, value: str) -> str:
+        lowered = value.lower()
+        if "\x00" in value:
+            raise ValueError("decoration_path contains an invalid null byte")
+        if not lowered.endswith(".json"):
+            raise ValueError("decoration_path must point to a JSON layout artifact")
+        return value
+
+
+class RoomRenderArtifact(StrictModel):
+    status: Literal["success", "failed"]
+    room_name: str
+    artifact_id: str
+    output_image_path: str | None = None
+    enhanced_prompt: str
+    warnings: list[str] = Field(default_factory=list)
+    error_message: str | None = None
+
+
+class RoomRenderGenerationResponse(StrictModel):
+    status: Literal["success", "failed"]
+    artifact_id: str
+    decoration_path: str
+    style: str
+    rooms: list[RoomRenderArtifact] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    error_message: str | None = None
+
+
 class PngGenerationRequest(RenderRequest):
     pass
 
@@ -237,13 +274,23 @@ class AgentRunResponse(StrictModel):
     error_message: str | None = None
 
 
-AgentIntent = Literal["generate", "edit", "discuss", "floor_plan_discuss", "floor_plan_plot", "other"]
+AgentIntent = Literal[
+    "generate",
+    "edit",
+    "discuss",
+    "floor_plan_discuss",
+    "floor_plan_plot",
+    "room_render_generate",
+    "other",
+]
 
 
 class AgentOrchestrateRequest(RenderRequest):
     latest_png_path: str | None = None
     temporary_text_to_image_prompt: str | None = None
     temporary_floor_plan_draft: FloorPlanDraft | None = None
+    latest_floor_plan_decoration_path: str | None = None
+    selected_room_names: list[str] = Field(default_factory=list)
     pointcloud_output_format: PointCloudOutputFormat = "ply"
 
 
@@ -258,6 +305,7 @@ class AgentOrchestrateResponse(StrictModel):
     floor_plan_missing_fields: list[str] = Field(default_factory=list)
     png: dict[str, Any] | None = None
     floor_plan: FloorPlanGenerationResponse | None = None
+    room_renders: RoomRenderGenerationResponse | None = None
     point_cloud: PointCloudGenerationResponse | None = None
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     api_calls: list[dict[str, Any]] = Field(default_factory=list)

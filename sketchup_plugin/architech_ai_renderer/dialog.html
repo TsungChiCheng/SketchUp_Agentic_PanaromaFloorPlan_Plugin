@@ -281,6 +281,8 @@
       let pendingMessage = null;
       let lastPng = null;
       let lastPointCloud = null;
+      let lastFloorPlan = null;
+      let backendUrl = "";
       let temporaryTextToImagePrompt = "";
       let temporaryFloorPlanDraft = null;
       let pointCloudImportCapability = {
@@ -352,7 +354,7 @@
       function previewImage(url, alt, options = {}) {
         if (!url) return null;
         const image = document.createElement("img");
-        image.src = `${url}?t=${Date.now()}`;
+        image.src = url.startsWith("data:") ? url : `${url}?t=${Date.now()}`;
         image.alt = alt;
         if (options.clickable) {
           image.tabIndex = 0;
@@ -492,6 +494,7 @@
         appendTimestamp(message);
 
         if (payload.status === "success") {
+          lastFloorPlan = payload;
           const artifacts = document.createElement("div");
           artifacts.className = "artifact-grid";
           artifacts.append(
@@ -513,6 +516,63 @@
             previews.appendChild(preview);
             message.appendChild(previews);
           }
+
+          const choices = document.createElement("div");
+          choices.className = "choice-row";
+          choices.append(choiceButton("Generate Room Renders", () => generateRoomRenders(payload), { disableSiblings: false }));
+          message.appendChild(choices);
+        }
+
+        thread.appendChild(message);
+        scrollThread();
+      }
+
+      function appendRoomRenderResult(payload, options = {}) {
+        const rooms = payload.rooms || [];
+        const floorPlan = options.floorPlan || null;
+        const message = document.createElement("article");
+        message.className = "message agent";
+        message.append(document.createTextNode(
+          payload.status === "success"
+            ? `Done. I generated ${rooms.length} room render${rooms.length === 1 ? "" : "s"}.`
+            : (payload.error_message || "Room rendering failed.")
+        ));
+        appendTimestamp(message);
+
+        if (rooms.length > 0) {
+          const artifacts = document.createElement("div");
+          artifacts.className = "artifact-grid";
+          rooms.forEach((room) => {
+            artifacts.append(artifactCard(room.room_name || "Room", room.output_image_path || room.local_output_image_path || room.error_message));
+          });
+          message.appendChild(artifacts);
+
+          const previews = document.createElement("div");
+          previews.className = "preview-grid";
+          rooms.forEach((room) => {
+            const preview = previewImage(room.render_preview_url, `${room.room_name || "Room"} render preview`);
+            if (preview) previews.appendChild(preview);
+          });
+          if (floorPlan && (floorPlan.floor_plan_svg_url || floorPlan.floor_plan_preview_url)) {
+            const floorPlanPreview = previewImage(floorPlan.floor_plan_svg_url || floorPlan.floor_plan_preview_url, "Floor plan preview", {
+              clickable: true,
+              title: "Open floor plan in a larger window",
+              onClick: () => openFloorPlanViewer(floorPlan)
+            });
+            if (floorPlanPreview) previews.appendChild(floorPlanPreview);
+          }
+          if (previews.children.length > 0) {
+            message.appendChild(previews);
+          }
+
+          const firstSuccess = rooms.find((room) => room.status === "success" && room.output_image_path);
+          if (firstSuccess) {
+            lastPng = firstSuccess;
+            const choices = document.createElement("div");
+            choices.className = "choice-row";
+            choices.append(choiceButton("Import First PNG", () => importPng(firstSuccess)));
+            message.appendChild(choices);
+          }
         }
 
         thread.appendChild(message);
@@ -520,21 +580,22 @@
       }
 
       function openFloorPlanViewer(payload) {
-        const svgPath = payload.local_svg_path || payload.svg_path;
+        const svgPath = payload.local_svg_path || (isLocalArtifactPath(payload.svg_path) ? payload.svg_path : null);
         const svgUrl = payload.floor_plan_svg_url || payload.floor_plan_preview_url;
         if (!svgPath && !svgUrl) {
           appendMessage("agent", "I do not have a floor-plan SVG to open.");
           return;
         }
-        if (!window.sketchup || typeof sketchup.open_floor_plan_viewer !== "function") {
-          appendMessage("agent", "Floor-plan viewer is unavailable. Restart SketchUp to reload the updated extension.");
-          return;
-        }
+        if (!hasSketchUpCallback("open_floor_plan_viewer")) return;
         sketchup.open_floor_plan_viewer(JSON.stringify({
           svg_path: svgPath,
           svg_url: svgUrl,
           title: payload.artifact_id ? `Floor Plan ${payload.artifact_id}` : "Floor Plan"
         }));
+      }
+
+      function isLocalArtifactPath(path) {
+        return Boolean(path) && !String(path).startsWith("/app/");
       }
 
       function importChoices(png, pointCloud) {
@@ -612,6 +673,7 @@
           appendMessage("agent", "I do not have a PNG artifact to import.");
           return;
         }
+        if (!hasSketchUpCallback("import_render")) return;
         setStatus("Importing PNG...");
         sketchup.import_render(JSON.stringify({ output_image_path: outputImagePath }));
       }
@@ -622,6 +684,7 @@
           appendMessage("agent", "I do not have a point-cloud artifact to import.");
           return;
         }
+        if (!hasSketchUpCallback("import_point_cloud")) return;
         setStatus(`Importing ${pointCloudFormat(pointCloud)}...`);
         sketchup.import_point_cloud(JSON.stringify({ pointcloud_path: pointcloudPath }));
       }
@@ -632,6 +695,7 @@
           appendMessage("agent", "I do not have a point-cloud artifact to reveal.");
           return;
         }
+        if (!hasSketchUpCallback("reveal_point_cloud")) return;
         setStatus(`Revealing ${pointCloudFormat(pointCloud)}...`);
         sketchup.reveal_point_cloud(JSON.stringify({ pointcloud_path: pointcloudPath }));
       }
@@ -642,10 +706,43 @@
           appendMessage("agent", "I do not have a PNG artifact to convert.");
           return;
         }
+        if (!hasSketchUpCallback("generate_point_cloud")) return;
         setRunning(true);
         setStatus("Generating PLY...");
         pendingMessage = appendMessage("agent", "Converting the edited PNG into a point cloud...", "pending");
-        sketchup.generate_point_cloud(JSON.stringify({ output_image_path: outputImagePath }));
+        try {
+          sketchup.generate_point_cloud(JSON.stringify({ output_image_path: outputImagePath }));
+        } catch (error) {
+          removePendingMessage();
+          setRunning(false);
+          setStatus("Point-cloud routing failed.");
+          appendMessage("agent", `Could not call generate_point_cloud: ${error.message || error}`);
+        }
+      }
+
+      function generateRoomRenders(floorPlan = null) {
+        if (isRunning) {
+          appendMessage("agent", "I am already running a request.");
+          return;
+        }
+        const activeFloorPlan = floorPlan || lastFloorPlan;
+        const decorationPath = activeFloorPlan && (activeFloorPlan.decoration_path || activeFloorPlan.local_decoration_path);
+        if (!decorationPath) {
+          appendMessage("agent", "I need a plotted floor-plan layout before rendering rooms.");
+          return;
+        }
+        if (!backendUrl) {
+          appendMessage("agent", "I do not have a backend URL yet. Restart SketchUp to reload the synced extension.");
+          return;
+        }
+        setRunning(true, "Room renders", 300000);
+        setStatus("Rendering rooms...");
+        pendingMessage = appendMessage("agent", "Generating room renders from the floor-plan layout...", "pending");
+        const payload = buildOrchestratePayload("generate room renders");
+        payload.latest_floor_plan_decoration_path = decorationPath;
+        payload.temporary_floor_plan_draft = temporaryFloorPlanDraft;
+        payload.selected_room_names = [];
+        runDirectFloorPlanOrchestration(payload);
       }
 
       function plotFloorPlan(draft = null) {
@@ -666,38 +763,16 @@
         setRunning(true, "Floor-plan plot", 300000);
         setStatus("Plotting floor plan...");
         pendingMessage = appendMessage("agent", "Plotting the floor plan...", "pending");
-        if (!window.sketchup) {
+        if (!backendUrl) {
           removePendingMessage();
           setRunning(false);
-          setStatus("Plot action is unavailable. Restart SketchUp to reload the extension.");
-          appendMessage("agent", "Plot Floor Plan is unavailable. Restart SketchUp to reload the updated extension.");
+          setStatus("Backend URL unavailable.");
+          appendMessage("agent", "I do not have a backend URL yet. Restart SketchUp to reload the synced extension.");
           return;
         }
-        try {
-          if (typeof sketchup.orchestrate_agent === "function") {
-            sketchup.orchestrate_agent(JSON.stringify({
-              style: style.value,
-              user_prompt: "plot the floor plan",
-              latest_png_path: lastPng && lastPng.output_image_path ? lastPng.output_image_path : null,
-              temporary_text_to_image_prompt: temporaryTextToImagePrompt,
-              temporary_floor_plan_draft: activeDraft,
-              view: {
-                yaw: 0,
-                pitch: 0,
-                roll: 0
-              }
-            }));
-          } else if (typeof sketchup.plot_floor_plan === "function") {
-            sketchup.plot_floor_plan(JSON.stringify({ floor_plan_draft: activeDraft }));
-          } else {
-            throw new Error("No floor-plan bridge callback is available.");
-          }
-        } catch (error) {
-          removePendingMessage();
-          setRunning(false);
-          setStatus("Plot action failed.");
-          appendMessage("agent", `Plot Floor Plan failed before reaching the backend: ${error.message || error}`);
-        }
+        const payload = buildOrchestratePayload("plot the floor plan");
+        payload.temporary_floor_plan_draft = activeDraft;
+        runDirectFloorPlanOrchestration(payload);
       }
 
       function removePendingMessage() {
@@ -710,6 +785,13 @@
       function runAgentPipeline() {
         if (isRunning) return;
         const prompt = promptInput.value.trim();
+        const floorPlanPrompt = isFloorPlanPrompt(prompt) || Boolean(temporaryFloorPlanDraft);
+        const callbackName = "orchestrate_agent";
+        if (!floorPlanPrompt && (!window.sketchup || typeof sketchup[callbackName] !== "function")) {
+          setStatus("Plugin callback unavailable.");
+          appendMessage("agent", `${callbackName} is unavailable. Restart SketchUp to load the synced extension. Backend URL: ${backendUrl || "unknown"}`);
+          return;
+        }
         setRunning(true);
         setResult("");
         appendMessage("user", prompt || "Render this SketchUp view and create a point cloud.");
@@ -718,24 +800,143 @@
           "Routing the request...",
           "pending"
         );
-        setStatus("Routing...");
+        setStatus(`Routing to ${backendUrl || "backend"}...`);
         promptInput.value = "";
-        sketchup.orchestrate_agent(JSON.stringify({
+        const requestPayload = buildOrchestratePayload(prompt);
+        if (floorPlanPrompt && backendUrl) {
+          runDirectFloorPlanOrchestration(requestPayload);
+          return;
+        }
+        try {
+          sketchup[callbackName](JSON.stringify(requestPayload));
+        } catch (error) {
+          removePendingMessage();
+          setRunning(false);
+          setStatus("Routing failed.");
+          appendMessage("agent", `Could not call ${callbackName}: ${error.message || error}. Backend URL: ${backendUrl || "unknown"}`);
+        }
+      }
+
+      function isFloorPlanPrompt(prompt) {
+        return /\b(floor\s*plan|floorplan|room\s*layout|plot\s+the\s+floor\s*plan|generate\s+room\s+renders|room\s*render|text2room|adjacent|door|doors|opening|entrance|hallway|corridor)\b|\d+\s*(?:x|by|×)\s*\d+/i.test(prompt || "");
+      }
+
+      function hasSketchUpCallback(name) {
+        if (window.sketchup && typeof sketchup[name] === "function") return true;
+        setStatus("Plugin callback unavailable.");
+        appendMessage("agent", `${name} is unavailable. Restart SketchUp to load the synced extension. Backend URL: ${backendUrl || "unknown"}`);
+        return false;
+      }
+
+      function buildOrchestratePayload(prompt) {
+        return {
+          project_id: "sketchup-local",
+          viewport_image_path: "floor_plan_placeholder.png",
           style: style.value,
           user_prompt: prompt,
           latest_png_path: lastPng && lastPng.output_image_path ? lastPng.output_image_path : null,
           temporary_text_to_image_prompt: temporaryTextToImagePrompt,
           temporary_floor_plan_draft: temporaryFloorPlanDraft,
+          latest_floor_plan_decoration_path: lastFloorPlan && (lastFloorPlan.decoration_path || lastFloorPlan.local_decoration_path) ? (lastFloorPlan.decoration_path || lastFloorPlan.local_decoration_path) : null,
+          camera: {
+            position: [0, 0, 1.6],
+            direction: [0, 1, 0],
+            target: [0, 1, 1.6],
+            fov: 45
+          },
+          model: {
+            bounds: { width: 0, depth: 0, height: 0 },
+            materials: [],
+            selected_entity_count: 0
+          },
+          render_options: {
+            preserve_geometry: true,
+            preserve_camera: true,
+            output_resolution: "1024x1024"
+          },
           view: {
             yaw: 0,
             pitch: 0,
             roll: 0
           }
-        }));
+        };
+      }
+
+      async function runDirectFloorPlanOrchestration(payload) {
+        try {
+          const backendPayload = Object.assign({}, payload);
+          delete backendPayload.view;
+          const response = await postBackend("/agent/orchestrate", backendPayload);
+          const hydrated = await hydrateDirectOrchestrateResult(response);
+          window.ArchitechRenderer.receiveOrchestrateResult(hydrated);
+        } catch (error) {
+          removePendingMessage();
+          setRunning(false);
+          setStatus("Backend request failed.");
+          appendMessage("agent", `Could not reach ${backendUrl}: ${error.message || error}`);
+        }
+      }
+
+      async function postBackend(path, payload) {
+        const base = backendUrl.replace(/\/+$/, "");
+        const response = await fetch(`${base}${path}`, {
+          method: "POST",
+          headers: {
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+        const text = await response.text();
+        let parsed = null;
+        try {
+          parsed = text ? JSON.parse(text) : {};
+        } catch (error) {
+          throw new Error(`Backend returned invalid JSON: ${text.slice(0, 160)}`);
+        }
+        if (!response.ok) {
+          throw new Error(parsed.detail || parsed.error_message || response.statusText);
+        }
+        return parsed;
+      }
+
+      async function hydrateDirectOrchestrateResult(payload) {
+        if (payload.png && payload.png.output_image_path) {
+          payload.png.render_preview_url = await downloadArtifactDataUrl(payload.png.output_image_path, "image/png");
+        }
+        if (payload.point_cloud && payload.point_cloud.preview_image_path) {
+          payload.point_cloud.pointcloud_preview_url = await downloadArtifactDataUrl(payload.point_cloud.preview_image_path, "image/png");
+        }
+        if (payload.floor_plan) {
+          await hydrateDirectFloorPlan(payload.floor_plan);
+        }
+        if (payload.room_renders && payload.room_renders.rooms) {
+          for (const room of payload.room_renders.rooms) {
+            if (room.output_image_path) {
+              room.render_preview_url = await downloadArtifactDataUrl(room.output_image_path, "image/png");
+            }
+          }
+        }
+        return payload;
+      }
+
+      async function hydrateDirectFloorPlan(floorPlan) {
+        if (floorPlan.svg_path) {
+          floorPlan.floor_plan_svg_url = await downloadArtifactDataUrl(floorPlan.svg_path, "image/svg+xml");
+        }
+        if (floorPlan.preview_image_path) {
+          floorPlan.floor_plan_preview_url = await downloadArtifactDataUrl(floorPlan.preview_image_path, "image/png");
+        }
+      }
+
+      async function downloadArtifactDataUrl(path, mimeType) {
+        const artifact = await postBackend("/artifacts/download", { path });
+        return `data:${mimeType};base64,${artifact.content_base64}`;
       }
 
       window.ArchitechRenderer = {
         receiveInitialState(payload) {
+          backendUrl = payload.backend_url || "";
           pointCloudImportCapability = payload.point_cloud_import || pointCloudImportCapability;
           style.textContent = "";
           payload.styles.forEach((preset) => {
@@ -745,7 +946,10 @@
             style.appendChild(option);
           });
           setStatus(`Backend: ${payload.backend_url}`);
-          appendMessage("agent", "Ready. Tell me what to render from the current SketchUp view.");
+          appendMessage("agent", `Ready. Backend: ${payload.backend_url}. UI: ${payload.ui_version || "unknown"}. Tell me what to render from the current SketchUp view.`);
+          if (window.sketchup && typeof sketchup.health_check === "function") {
+            sketchup.health_check();
+          }
         },
         receiveHealth(payload) {
           setStatus(payload.status === "ok" ? "Backend is healthy." : "Backend check failed.");
@@ -827,6 +1031,13 @@
           appendFloorPlanResult(payload);
           setResult(payload);
         },
+        receiveRoomRenderResult(payload) {
+          setRunning(false);
+          removePendingMessage();
+          setStatus(payload.status === "success" ? "Room renders complete." : "Room renders failed.");
+          appendRoomRenderResult(payload);
+          setResult(payload);
+        },
         receiveFloorPlanViewerResult(payload) {
           if (payload.status !== "success") {
             appendMessage("agent", payload.error_message || "Could not open the floor-plan viewer.");
@@ -865,6 +1076,13 @@
             appendFloorPlanDraft(payload);
           } else if (payload.intent === "floor_plan_plot") {
             appendFloorPlanResult(payload.floor_plan || payload);
+          } else if (payload.intent === "room_render_generate") {
+            if (payload.floor_plan) {
+              lastFloorPlan = payload.floor_plan;
+            }
+            appendRoomRenderResult(payload.room_renders || payload, {
+              floorPlan: payload.floor_plan || lastFloorPlan
+            });
           } else {
             appendMessage("agent", payload.message || payload.error_message || "I need more information.");
           }

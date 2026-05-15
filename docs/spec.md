@@ -123,11 +123,12 @@ Accepts the render request schema plus latest dialog state:
 - latest PNG path, when available
 - temporary text-to-image prompt, when available
 - temporary floor-plan draft, when available
+- latest floor-plan decoration JSON path, when available
 - point-cloud output format
 
-Classifies the request as `generate`, `edit`, `discuss`, `floor_plan_discuss`, `floor_plan_plot`, or `other`, assigns the matching sub-agent/tool path, and calls only that path. The intent classifier receives the existing `temporary_floor_plan_draft` JSON when available, so follow-up room/dimension/door messages are interpreted against the current draft by the LLM instead of frontend keyword rules.
+Classifies the request as `generate`, `edit`, `discuss`, `floor_plan_discuss`, `floor_plan_plot`, `room_render_generate`, or `other`, assigns the matching sub-agent/tool path, and calls only that path. The intent classifier receives the existing `temporary_floor_plan_draft` JSON and latest decoration-path availability when available, so follow-up room/dimension/door messages and room-render requests are interpreted against backend-owned state instead of frontend keyword rules.
 
-The SketchUp composer submits the same orchestration request from the visible `Chat` button or the hidden keyboard shortcut (`Cmd+Enter` on macOS, `Ctrl+Enter` elsewhere). The `Plot Floor Plan` button also calls `/agent/orchestrate` with `user_prompt: "plot the floor plan"` plus the current draft; the direct `/generate/floor-plan` bridge remains a SketchUp-side fallback.
+The SketchUp composer submits render and edit requests through the Ruby bridge when a viewport export is required. Floor-plan discussion prompts, the `Plot Floor Plan` button, and the `Generate Room Renders` button call `/agent/orchestrate` directly from the HtmlDialog with `fetch` using the backend URL supplied by Ruby during initialization. These floor-plan flows send draft or decoration JSON state, use placeholder viewport metadata, and do not call `/uploads/viewport`.
 
 ### `POST /agent/run`
 
@@ -150,10 +151,11 @@ V1 uses internal backend tools rather than a standalone MCP server:
 - `DepthAnythingPointCloudTool`
 - `FloorPlanDecorationTool`
 - `FloorPlanPlotTool`
+- `RoomRenderTool`
 - `LangChainAgentPipeline`
 - `DeterministicAgentFallback`
 
-SketchUp-local import tools are implemented as dialog callbacks because importing files into the active model must run inside SketchUp:
+SketchUp-local import tools are implemented as guarded dialog callbacks because importing files into the active model must run inside SketchUp:
 
 - `ImportPngToSketchUp`
 - `RevealPointCloudInFinder`
@@ -171,11 +173,13 @@ Floor-plan requests use the existing discussion flow before plotting:
 1. The user describes rooms, dimensions, adjacency, doors/openings, and labels.
 2. `/agent/orchestrate` updates `temporary_floor_plan_draft` and returns missing fields until the draft is ready.
 3. When the draft is complete, the SketchUp dialog offers `Plot Floor Plan`.
-4. Plotting sends `user_prompt: "plot the floor plan"` and the current `temporary_floor_plan_draft` through `/agent/orchestrate`.
+4. Plotting sends `user_prompt: "plot the floor plan"` and the current `temporary_floor_plan_draft` directly from the HtmlDialog to `/agent/orchestrate`.
 5. The backend routes `floor_plan_plot` to `/generate/floor-plan`.
 6. `FloorPlanDecorationTool` converts the draft into a decorated layout JSON plan with room positions, furniture positions/sizes, door positions/sizes, and door swing direction.
 7. `FloorPlanPlotTool` receives that decorated layout JSON and draws the authoritative furnished SVG.
-8. The dialog downloads the SVG, decoration JSON, and PNG compatibility preview artifacts, then displays the SVG preview in the chat. Clicking the small preview opens the SVG in a larger SketchUp dialog.
+8. The dialog downloads the SVG, decoration JSON, and PNG compatibility preview artifacts through `/artifacts/download`, then displays the SVG preview in the chat. Clicking the small preview opens the SVG in a larger SketchUp dialog.
+9. The dialog offers `Generate Room Renders`, which directly calls `/agent/orchestrate` as `room_render_generate` using the latest decoration JSON.
+10. `RoomRenderTool` turns each selected room, or all rooms by default, into room-level interior PNG artifacts and returns preview/download paths.
 
 V1 plotting is LLM-tool-authored and diagrammatic: the backend validates that enough structured details exist, then `FloorPlanDecorationTool` produces room/furniture/door arrangement as JSON and `FloorPlanPlotTool` produces the SVG drawing through the configured OpenAI model. The workflow does not infer rooms from SketchUp geometry, and plotting requires `OPENAI_API_KEY`.
 

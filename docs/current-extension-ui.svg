@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="640" height="1020" viewBox="0 0 640 1020" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="1120" viewBox="0 0 640 1120" role="img" aria-labelledby="title desc">
   <title id="title">Architech Chat Agent Dialog</title>
-  <desc id="desc">Static SVG mock of the Architech chat dialog showing floor-plan discussion, follow-up draft update, Plot Floor Plan through orchestration, decoration JSON and SVG artifacts, clickable SVG preview, and bottom composer.</desc>
+  <desc id="desc">Static SVG mock of the Architech chat dialog showing floor-plan discussion, follow-up draft update, direct Plot Floor Plan orchestration, decoration JSON and SVG artifacts, direct room render generation, clickable previews, backend URL and UI version visibility, and bottom composer.</desc>
   <defs>
     <style>
       .bg { fill: #f5f6f8; }
@@ -22,7 +22,7 @@
     </style>
   </defs>
 
-  <rect class="bg" width="640" height="1020"/>
+  <rect class="bg" width="640" height="1120"/>
 
   <g transform="translate(32 24)">
     <text class="title" x="0" y="20">Architech Agent</text>
@@ -30,8 +30,8 @@
 
     <g transform="translate(0 52)">
       <rect class="panel" x="0" y="0" width="360" height="52" rx="8"/>
-      <text class="text" x="14" y="22">Ready. Tell me what to render or plan</text>
-      <text class="text" x="14" y="40">from the current SketchUp view.</text>
+      <text class="text" x="14" y="22">Ready. Backend: http://127.0.0.1:8000</text>
+      <text class="text" x="14" y="40">UI: 2026-05-16-floorplan-direct-v2</text>
     </g>
 
     <g transform="translate(138 124)">
@@ -70,7 +70,7 @@
       <rect class="artifact" x="14" y="44" width="492" height="34" rx="6"/>
       <text class="label" x="28" y="66">Rooms</text>
       <text class="muted" x="112" y="66">Living 12x14, Kitchen 8x10, Office 7x9</text>
-      <text class="muted" x="14" y="102">Plot button sends draft JSON through /agent/orchestrate.</text>
+      <text class="muted" x="14" y="102">Plot direct-fetches /agent/orchestrate; no viewport upload.</text>
     </g>
 
     <g transform="translate(0 614)">
@@ -100,9 +100,24 @@
       <text class="tiny" x="50" y="208">Living</text>
       <text class="tiny" x="122" y="208">Kitchen</text>
       <text class="muted" x="248" y="202">Clickable SVG preview from Decor JSON</text>
+
+      <rect class="button" x="356" y="178" width="170" height="36" rx="6"/>
+      <text class="buttonText" x="379" y="201">Generate Room Renders</text>
     </g>
 
     <g transform="translate(0 858)">
+      <rect class="panel" x="0" y="0" width="540" height="132" rx="8"/>
+      <text class="text" x="14" y="28">Room renders are ready from this floor plan.</text>
+      <rect class="artifact" x="14" y="48" width="512" height="34" rx="6"/>
+      <text class="label" x="28" y="70">Living</text>
+      <text class="muted" x="112" y="70">/app/outputs/roomrenders_...living.png</text>
+      <rect class="artifact" x="14" y="90" width="236" height="28" rx="6"/>
+      <text class="label" x="28" y="109">Kitchen</text>
+      <rect class="artifact" x="264" y="90" width="262" height="28" rx="6"/>
+      <text class="label" x="278" y="109">Office</text>
+    </g>
+
+    <g transform="translate(0 998)">
       <rect class="panel" x="0" y="0" width="576" height="112" rx="8"/>
       <text class="muted" x="14" y="30">Ask Architech to render, edit, discuss, or plot a floor plan...</text>
       <line class="line" x1="14" y1="68" x2="562" y2="68"/>

@@ -174,11 +174,17 @@ def decorate_floor_plan_with_openai(request: FloorPlanGenerationRequest, setting
                     {"role": "user", "content": compose_floor_plan_decoration_user_message(request)},
                 ],
             },
-            timeout=60.0,
+            timeout=settings.floor_plan_tool_timeout_seconds,
         )
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
         parsed = json.loads(content)
+    except httpx.TimeoutException as exc:
+        raise FloorPlanError(
+            "FloorPlanDecorationTool timed out while waiting for the OpenAI response. "
+            f"Increase FLOOR_PLAN_TOOL_TIMEOUT_SECONDS above {settings.floor_plan_tool_timeout_seconds:g} "
+            "or retry with a smaller floor-plan draft."
+        ) from exc
     except Exception as exc:
         raise FloorPlanError(f"FloorPlanDecorationTool failed to produce decorated layout JSON: {exc}") from exc
     return sanitize_decorated_layout(parsed)
@@ -199,11 +205,17 @@ def plot_svg_with_openai(request: FloorPlanGenerationRequest, settings: Settings
                     {"role": "user", "content": compose_floor_plan_svg_user_message(request, layout)},
                 ],
             },
-            timeout=60.0,
+            timeout=settings.floor_plan_tool_timeout_seconds,
         )
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
         parsed = json.loads(content)
+    except httpx.TimeoutException as exc:
+        raise FloorPlanError(
+            "FloorPlanPlotTool timed out while waiting for the OpenAI response. "
+            f"Increase FLOOR_PLAN_TOOL_TIMEOUT_SECONDS above {settings.floor_plan_tool_timeout_seconds:g} "
+            "or retry with fewer rooms/furniture details."
+        ) from exc
     except Exception as exc:
         raise FloorPlanError(f"FloorPlanPlotTool failed to produce SVG: {exc}") from exc
     svg = str(parsed.get("svg") or "")

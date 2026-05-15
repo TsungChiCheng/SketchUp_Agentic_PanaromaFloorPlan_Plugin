@@ -42,6 +42,10 @@ module Architech
         request(:post, "/generate/floor-plan", payload)
       end
 
+      def room_renders(payload)
+        request(:post, "/generate/room-renders", payload)
+      end
+
       def edit_image(payload)
         request(:post, "/edit/image", payload)
       end

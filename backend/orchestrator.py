@@ -3,12 +3,14 @@ import re
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
 from agent_pipeline import run_agent_pipeline
 from floor_plan_tool import FloorPlanConfigurationError, FloorPlanError, floor_plan_missing_fields, generate_floor_plan
 from point_cloud_tool import generate_point_cloud
 from prompts import ORCHESTRATOR_INTENT_SYSTEM_PROMPT, compose_intent_classifier_user_message
 from renderers import edit_image
+from room_render_tool import RoomRenderConfigurationError, RoomRenderError, generate_room_renders
 from schemas import (
     AgentIntent,
     AgentOrchestrateRequest,
@@ -19,6 +21,7 @@ from schemas import (
     FloorPlanGenerationRequest,
     ImageEditRequest,
     PointCloudGenerationRequest,
+    RoomRenderGenerationRequest,
 )
 from settings import Settings
 
@@ -77,6 +80,90 @@ def run_orchestrator(request: AgentOrchestrateRequest, settings: Settings) -> Ag
             api_calls=api_calls,
             trace=[*trace, "tool:generate_floor_plan", "orchestrator:complete"],
             warnings=floor_plan.warnings,
+        )
+
+    if intent == "room_render_generate":
+        decoration_path = request.latest_floor_plan_decoration_path
+        floor_plan = None
+        draft = request.temporary_floor_plan_draft
+        missing = floor_plan_missing_fields(FloorPlanGenerationRequest.model_validate(draft.model_dump()) if draft else None)
+        if not decoration_path and missing:
+            return AgentOrchestrateResponse(
+                status="failed",
+                intent="room_render_generate",
+                assigned_agent="RoomRenderAgent",
+                message="I need a plotted floor-plan layout before rendering rooms.",
+                floor_plan_draft=draft,
+                floor_plan_ready=False,
+                floor_plan_missing_fields=missing,
+                api_calls=api_calls,
+                trace=[*trace, "orchestrator:missing_floor_plan_decoration"],
+                error_message="No floor-plan decoration JSON is available for room rendering.",
+            )
+        try:
+            if not decoration_path and draft:
+                api_calls.append(_api_call("tool:generate_floor_plan", request.user_prompt))
+                floor_plan = generate_floor_plan(FloorPlanGenerationRequest.model_validate(draft.model_dump()), settings)
+                decoration_path = floor_plan.decoration_path
+            if not decoration_path:
+                raise RoomRenderError("No floor-plan decoration JSON is available for room rendering.")
+            api_calls.append(_api_call("tool:generate_room_renders", request.user_prompt))
+            room_renders = generate_room_renders(
+                RoomRenderGenerationRequest(
+                    decoration_path=decoration_path,
+                    style=request.style,
+                    selected_room_names=request.selected_room_names,
+                ),
+                settings,
+            )
+        except (FloorPlanConfigurationError, FloorPlanError, RoomRenderConfigurationError, RoomRenderError, ValidationError) as exc:
+            return AgentOrchestrateResponse(
+                status="failed",
+                intent="room_render_generate",
+                assigned_agent="RoomRenderAgent",
+                message=str(exc),
+                floor_plan_draft=draft,
+                floor_plan_ready=bool(floor_plan),
+                floor_plan=floor_plan,
+                api_calls=api_calls,
+                trace=[*trace, "orchestrator:room_render_failed"],
+                error_message=str(exc),
+            )
+
+        artifacts = []
+        if floor_plan:
+            artifacts.extend(
+                [
+                    {"type": "floor_plan_svg", "path": floor_plan.svg_path, "artifact_id": floor_plan.artifact_id},
+                    {"type": "floor_plan_png", "path": floor_plan.preview_image_path, "artifact_id": floor_plan.artifact_id},
+                    {"type": "floor_plan_decoration_json", "path": floor_plan.decoration_path, "artifact_id": floor_plan.artifact_id},
+                ]
+            )
+        artifacts.extend(
+            [
+                {"type": "room_render_png", "path": room.output_image_path, "artifact_id": room.artifact_id, "room_name": room.room_name}
+                for room in room_renders.rooms
+                if room.output_image_path
+            ]
+        )
+        return AgentOrchestrateResponse(
+            status=room_renders.status,
+            intent="room_render_generate",
+            assigned_agent="RoomRenderAgent",
+            message=(
+                f"Generated {len(room_renders.rooms)} room render{'s' if len(room_renders.rooms) != 1 else ''}."
+                if room_renders.status == "success"
+                else room_renders.error_message or "Room rendering failed."
+            ),
+            floor_plan_draft=draft,
+            floor_plan_ready=True,
+            floor_plan=floor_plan,
+            room_renders=room_renders,
+            artifacts=artifacts,
+            api_calls=api_calls,
+            trace=[*trace, "tool:generate_room_renders", "orchestrator:complete"],
+            warnings=[*(floor_plan.warnings if floor_plan else []), *room_renders.warnings],
+            error_message=room_renders.error_message,
         )
 
     if intent == "floor_plan_discuss":
@@ -169,7 +256,17 @@ def run_orchestrator(request: AgentOrchestrateRequest, settings: Settings) -> Ag
             error_message=classification.get("message") or "Unsupported request.",
         )
 
-    agent_request = AgentRunRequest.model_validate(request.model_dump(exclude={"latest_png_path", "temporary_text_to_image_prompt", "temporary_floor_plan_draft"}))
+    agent_request = AgentRunRequest.model_validate(
+        request.model_dump(
+            exclude={
+                "latest_png_path",
+                "temporary_text_to_image_prompt",
+                "temporary_floor_plan_draft",
+                "latest_floor_plan_decoration_path",
+                "selected_room_names",
+            }
+        )
+    )
     generated = run_agent_pipeline(agent_request, settings)
     return AgentOrchestrateResponse(
         status=generated.status,
@@ -231,7 +328,7 @@ def classify_intent_with_openai(
 
     parsed = json.loads(content)
     intent = parsed.get("intent")
-    if intent not in {"generate", "edit", "discuss", "floor_plan_discuss", "floor_plan_plot", "other"}:
+    if intent not in {"generate", "edit", "discuss", "floor_plan_discuss", "floor_plan_plot", "room_render_generate", "other"}:
         raise ValueError("Classifier returned an unsupported intent.")
     return parsed
 
@@ -240,8 +337,16 @@ def classify_intent_deterministically(request: AgentOrchestrateRequest) -> dict[
     prompt = (request.user_prompt or "").strip()
     lowered = prompt.lower()
     latest_png_available = bool(request.latest_png_path)
+    room_render_terms = r"\b(room\s*render|room\s*renders|render\s*rooms?|render\s*each\s*room|room\s*png|room\s*pngs|text2room|interior\s*images?)\b"
     floor_plan_terms = r"\b(floor\s*plan|floorplan|plan\s+layout|room\s+layout|plot\s+plan|planner)\b"
     plot_terms = r"\b(plot|draw|generate|create|make)\b"
+    floor_plan_update_terms = r"\b(room|area|space|adjacent|next to|connected|open to|beside|between|layout|door|doors|opening|entry|entrance)\b|\d+(?:\.\d+)?\s*(?:x|by|×)\s*\d+(?:\.\d+)?"
+    if re.search(room_render_terms, lowered):
+        return {
+            "intent": "room_render_generate",
+            "assigned_agent": "RoomRenderAgent",
+            "message": "Generate room renders from the plotted floor-plan layout.",
+        }
     if re.search(floor_plan_terms, lowered):
         if re.search(plot_terms, lowered) and request.temporary_floor_plan_draft:
             return {"intent": "floor_plan_plot", "assigned_agent": "FloorPlanToolchain", "message": "Plot the floor plan."}
@@ -249,6 +354,12 @@ def classify_intent_deterministically(request: AgentOrchestrateRequest) -> dict[
             "intent": "floor_plan_discuss",
             "assigned_agent": "FloorPlanDiscussionAgent",
             "message": "Discuss and capture floor-plan details before plotting.",
+        }
+    if request.temporary_floor_plan_draft and re.search(floor_plan_update_terms, lowered):
+        return {
+            "intent": "floor_plan_discuss",
+            "assigned_agent": "FloorPlanDiscussionAgent",
+            "message": "Continue updating the existing floor-plan draft.",
         }
     if latest_png_available and re.search(r"\b(add|insert|place|put|remove|delete|replace|change|edit|adjust|revise|update)\b", lowered):
         return {"intent": "edit", "assigned_agent": "ImageEditAgent", "message": "Edit the latest render."}

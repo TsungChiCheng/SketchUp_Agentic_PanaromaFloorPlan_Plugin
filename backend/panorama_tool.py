@@ -23,7 +23,7 @@ class PanoramaConfigurationError(PanoramaError):
     pass
 
 
-PANORAMA_VARIANT_COUNT = 4
+PANORAMA_VARIANT_COUNT = 2
 
 
 def generate_panorama(
@@ -124,16 +124,11 @@ def compose_scene_description(layout: dict) -> str:
     door_text = describe_doors(layout.get("doors", []))
     furniture_text = describe_furniture(layout.get("furniture", []))
     circulation_text = describe_circulation(layout.get("circulation", []), camera_x, camera_y)
-    source_text = (
-        "using the west exterior front-door coordinate"
-        if camera["source"] == "front_door_west"
-        else "using the left wall midpoint fallback"
-    )
     return " ".join(
         part
         for part in [
-            f"The viewer is a standing person at floor-plan coordinate ({camera_x:.2f}, {camera_y:.2f}), {source_text}, facing the positive X-axis.",
-            "Positive X is forward, negative X is behind, positive Y is left, and negative Y is right from the viewer perspective.",
+            f"The viewer is a standing person at the floor-plan center coordinate ({camera_x:.2f}, {camera_y:.2f}).",
+            "Positive X is the front seam reference, negative X is behind, positive Y is the left hemisphere direction, and negative Y is the right hemisphere direction.",
             f"Rooms: {room_text}.",
             door_text,
             furniture_text,
@@ -166,14 +161,14 @@ def compose_panorama_prompt(
     return " ".join(
         part
         for part in [
-            "Create one realistic 16:9 wide architectural interior view from the whole floor-plan layout.",
+            "Create one realistic 16:9 wide architectural interior panorama from the whole floor-plan layout.",
             variant_instruction,
             f"Style direction: {style.strip()}.",
             scene_description,
             geometry_instruction,
-            "Use a single camera only: a natural eye-level view from a man standing at the described coordinate and facing positive X, matching the described camera direction.",
-            "Use a wide-angle lens that shows the adjacent rooms and openings coherently without fisheye distortion.",
+            "Use a single camera only: a natural eye-level view from a man standing at the described center coordinate and facing the positive X seam reference.",
             "Keep the camera location, eye height, horizon, lighting, material palette, and geometry scale physically consistent in one image.",
+            "Use a wide-angle lens that shows adjacent rooms and openings coherently without fisheye distortion.",
             "Do not include floor-plan labels, measurement text, diagram lines, captions, or UI.",
         ]
         if part
@@ -184,48 +179,30 @@ def select_panorama_camera(layout: dict, rooms: list[dict] | None = None) -> dic
     usable_rooms = rooms if rooms is not None else [room for room in layout.get("rooms", []) if isinstance(room, dict)]
     if not usable_rooms:
         raise PanoramaError("Decoration JSON must include at least one room.")
-    front_door = select_west_front_door(layout.get("doors", []))
-    if front_door:
-        return camera_context(
-            number(front_door.get("x")),
-            number(front_door.get("y")),
-            "front_door_west",
-        )
-    min_x, min_y, _max_x, max_y = layout_bounds(usable_rooms)
-    return camera_context(min_x, (min_y + max_y) / 2.0, "left_center_fallback")
+    center_x, center_y = layout_center(usable_rooms)
+    return camera_context(center_x, center_y)
 
 
-def select_west_front_door(items: object) -> dict | None:
-    if not isinstance(items, list):
-        return None
-    candidates = [
-        item
-        for item in items
-        if isinstance(item, dict)
-        and str(item.get("wall") or "").strip().lower() == "west"
-        and is_exterior_door_target(item.get("to_room"))
-    ]
-    if not candidates:
-        return None
-    return sorted(candidates, key=lambda item: (number(item.get("y")), number(item.get("x"))))[0]
-
-
-def is_exterior_door_target(value: object) -> bool:
-    if value is None:
-        return True
-    text = str(value).strip().lower()
-    return text in {"", "outside", "exterior"}
-
-
-def camera_context(x: float, y: float, source: str) -> dict:
+def camera_context(x: float, y: float) -> dict:
     return {
         "position": {"x": x, "y": y},
         "facing": "+X",
         "forward_axis": "+X",
         "left_axis": "+Y",
         "right_axis": "-Y",
-        "source": source,
+        "source": "layout_center",
+        "hemispheres": {
+            "left": {"facing": "+Y", "seam_axis": "+X"},
+            "right": {"facing": "-Y", "seam_axis": "+X"},
+        },
     }
+
+
+def describe_hemisphere(value: str) -> dict:
+    side = value.strip().lower()
+    if side == "right":
+        return {"side": "right", "label": "right hemisphere", "axis": "-Y", "turn": "right"}
+    return {"side": "left", "label": "left hemisphere", "axis": "+Y", "turn": "left"}
 
 
 def layout_bounds(rooms: list[dict]) -> tuple[float, float, float, float]:
@@ -329,7 +306,7 @@ def render_panorama_image(prompt: str, settings: Settings, artifact_id: str, out
                 "model": settings.openai_image_model,
                 "prompt": prompt,
                 "n": 1,
-                "size": "1024x1024",
+                "size": openai_panorama_provider_size(output_resolution),
                 "output_format": "png",
             },
             timeout=120.0,
@@ -372,6 +349,11 @@ def normalize_to_resolution(image: Image.Image, width: int, height: int) -> Imag
         top = (image.height - crop_height) // 2
         image = image.crop((0, top, image.width, top + crop_height))
     return image.resize((width, height))
+
+
+def openai_panorama_provider_size(output_resolution: str) -> str:
+    parse_resolution(output_resolution)
+    return "auto"
 
 
 def parse_resolution(value: str) -> tuple[int, int]:

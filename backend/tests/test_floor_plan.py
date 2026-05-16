@@ -13,8 +13,15 @@ from floor_plan_tool import (
     decorate_floor_plan_with_openai,
     generate_floor_plan,
     plot_svg_with_openai,
+    sanitize_agent_svg,
 )
-from panorama_tool import compose_geometry_context, compose_panorama_prompt, compose_scene_description, generate_panorama
+from panorama_tool import (
+    compose_geometry_context,
+    compose_panorama_prompt,
+    compose_scene_description,
+    generate_panorama,
+    openai_panorama_provider_size,
+)
 from room_render_tool import compose_room_render_prompt, generate_room_renders
 from main import app
 from schemas import FloorPlanGenerationRequest, PanoramaGenerationRequest, RoomRenderGenerationRequest
@@ -138,6 +145,14 @@ def test_floor_plan_openai_tool_returns_svg(monkeypatch) -> None:
     decorated_layout = decorate_floor_plan_with_openai(request, get_settings())
 
     assert plot_svg_with_openai(request, get_settings(), decorated_layout).startswith("<svg")
+
+
+def test_sanitize_agent_svg_escapes_unescaped_ampersands() -> None:
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>Living & Kitchen</text></svg>'
+
+    sanitized = sanitize_agent_svg(svg)
+
+    assert "Living &amp; Kitchen" in sanitized
 
 
 def test_floor_plan_tool_timeout_is_configurable_and_clear(monkeypatch) -> None:
@@ -270,8 +285,9 @@ def test_panorama_scene_description_uses_whole_layout_context() -> None:
 
     description = compose_scene_description(layout)
 
-    assert "facing the positive X-axis" in description
-    assert "left wall midpoint fallback" in description
+    assert "floor-plan center coordinate" in description
+    assert "positive Y is the left hemisphere direction" in description
+    assert "negative Y is the right hemisphere direction" in description
     assert "Living" in description
     assert "Kitchen" in description
     assert "Sofa" in description
@@ -293,9 +309,11 @@ def test_panorama_geometry_context_preserves_layout_coordinates() -> None:
 
     context = compose_geometry_context(layout)
 
-    assert context["camera"]["position"] == {"x": 0.0, "y": 5.0}
+    assert context["camera"]["position"] == {"x": 20.0, "y": 5.0}
     assert context["camera"]["facing"] == "+X"
-    assert context["camera"]["source"] == "left_center_fallback"
+    assert context["camera"]["source"] == "layout_center"
+    assert context["camera"]["hemispheres"]["left"]["facing"] == "+Y"
+    assert context["camera"]["hemispheres"]["right"]["facing"] == "-Y"
     assert context["visual_order"] == "Living -> Kitchen -> Office"
     assert context["rooms"][1] == {
         "name": "Kitchen",
@@ -309,7 +327,7 @@ def test_panorama_geometry_context_preserves_layout_coordinates() -> None:
     assert context["doors"][1]["to_room"] == "Office"
 
 
-def test_panorama_geometry_context_uses_west_front_door_camera() -> None:
+def test_panorama_geometry_context_ignores_front_door_for_center_camera() -> None:
     layout = {
         "rooms": [
             {"name": "Living", "x": 0, "y": 0, "width": 12, "depth": 10},
@@ -324,14 +342,14 @@ def test_panorama_geometry_context_uses_west_front_door_camera() -> None:
     context = compose_geometry_context(layout)
     description = compose_scene_description(layout)
 
-    assert context["camera"]["position"] == {"x": 0.0, "y": 8.5}
+    assert context["camera"]["position"] == {"x": 10.0, "y": 5.0}
     assert context["camera"]["facing"] == "+X"
-    assert context["camera"]["source"] == "front_door_west"
-    assert "west exterior front-door coordinate" in description
-    assert "coordinate (0.00, 8.50)" in description
+    assert context["camera"]["source"] == "layout_center"
+    assert "floor-plan center coordinate" in description
+    assert "coordinate (10.00, 5.00)" in description
 
 
-def test_panorama_geometry_context_uses_lowest_y_west_front_door() -> None:
+def test_panorama_geometry_context_uses_layout_center_with_multiple_exterior_doors() -> None:
     layout = {
         "rooms": [{"name": "Living", "x": 0, "y": 0, "width": 12, "depth": 14}],
         "doors": [
@@ -343,8 +361,8 @@ def test_panorama_geometry_context_uses_lowest_y_west_front_door() -> None:
 
     context = compose_geometry_context(layout)
 
-    assert context["camera"]["position"] == {"x": 0.0, "y": 2.0}
-    assert context["camera"]["source"] == "front_door_west"
+    assert context["camera"]["position"] == {"x": 6.0, "y": 7.0}
+    assert context["camera"]["source"] == "layout_center"
 
 
 def test_generate_panorama_uses_mock_provider(monkeypatch, tmp_path) -> None:
@@ -363,12 +381,22 @@ def test_generate_panorama_uses_mock_provider(monkeypatch, tmp_path) -> None:
     assert response.status == "success"
     assert response.artifact_id.startswith("panorama_")
     assert response.panorama_image_path
-    assert len(response.panorama_image_paths) == 4
+    assert len(response.panorama_image_paths) == 2
     from PIL import Image
 
     assert response.panorama_image_path == response.panorama_image_paths[0]
     for image_path in response.panorama_image_paths:
         assert Image.open(image_path).size == (1024, 576)
+
+
+def test_panorama_request_defaults_to_plugin_aligned_16_9_panel_size() -> None:
+    request = PanoramaGenerationRequest(decoration_path="outputs/floorplan.layout.json", style="modern interior")
+
+    assert request.output_resolution == "1024x576"
+
+
+def test_openai_panorama_provider_size_uses_auto_for_16_9_outputs() -> None:
+    assert openai_panorama_provider_size("1024x576") == "auto"
 
 
 def test_generate_panorama_endpoint_returns_artifacts(monkeypatch, tmp_path) -> None:
@@ -389,18 +417,18 @@ def test_generate_panorama_endpoint_returns_artifacts(monkeypatch, tmp_path) -> 
     assert "left_image_path" not in body
     assert "right_image_path" not in body
     assert body["panorama_image_path"].endswith("_option_1.png")
-    assert len(body["panorama_image_paths"]) == 4
+    assert len(body["panorama_image_paths"]) == 2
     assert all(path.endswith(f"_option_{index}.png") for index, path in enumerate(body["panorama_image_paths"], start=1))
-    assert "positive X-axis" in body["scene_description"]
+    assert "floor-plan center coordinate" in body["scene_description"]
 
 
-def test_generate_panorama_openai_renders_single_image(monkeypatch, tmp_path) -> None:
+def test_generate_panorama_openai_generates_two_direct_panorama_images(monkeypatch, tmp_path) -> None:
     decoration_path = tmp_path / "floorplan.layout.json"
     decoration_path.write_text(json.dumps(decorated_layout_payload()), encoding="utf-8")
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
     monkeypatch.setenv("RENDER_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
-    prompts = []
+    generation_prompts = []
     from PIL import Image
     from io import BytesIO
 
@@ -411,8 +439,8 @@ def test_generate_panorama_openai_renders_single_image(monkeypatch, tmp_path) ->
 
     def fake_post(*args, **kwargs):
         assert args[0] == "https://api.openai.com/v1/images/generations"
-        assert kwargs["json"]["size"] == "1024x1024"
-        prompts.append(kwargs["json"]["prompt"])
+        assert kwargs["json"]["size"] == "auto"
+        generation_prompts.append(kwargs["json"]["prompt"])
         return httpx.Response(200, json={"data": [{"b64_json": image_b64}]})
 
     monkeypatch.setattr("panorama_tool.httpx.post", fake_post)
@@ -425,9 +453,11 @@ def test_generate_panorama_openai_renders_single_image(monkeypatch, tmp_path) ->
     response = generate_panorama(request, get_settings())
 
     assert response.status == "success"
-    assert len(prompts) == 4
-    for index, prompt in enumerate(prompts, start=1):
-        assert "one realistic 16:9 wide architectural interior view" in prompt
+    assert len(generation_prompts) == 2
+    assert len(response.panorama_image_paths) == 2
+    for index, prompt in enumerate(generation_prompts, start=1):
+        assert "one realistic 16:9 wide architectural interior panorama" in prompt
+        assert f"option {index} of 2" in prompt
         assert "Use a single camera only" in prompt
         assert "Use this JSON geometry as the source of truth" in prompt
         assert "Do not reorder rooms" in prompt
@@ -435,30 +465,26 @@ def test_generate_panorama_openai_renders_single_image(monkeypatch, tmp_path) ->
         assert '"visual_order": "Living -> Kitchen"' in prompt
         assert '"rooms":' in prompt
         assert '"doors":' in prompt
-        assert "facing positive X" in prompt
+        assert "floor-plan center coordinate" in prompt
         assert "wide-angle lens" in prompt
-        assert f"Generate option {index} of 4" in prompt
+        assert "images/edits" not in prompt
         assert "left image then right image" not in prompt
-    assert len(response.panorama_image_paths) == 4
     for image_path in response.panorama_image_paths:
         assert Image.open(image_path).size == (1024, 576)
 
 
 def test_panorama_prompt_uses_single_camera() -> None:
     prompt = compose_panorama_prompt(
-        "The viewer is facing the positive X-axis.",
+        "The viewer is at the floor-plan center coordinate.",
         "modern interior",
         geometry_context={"visual_order": "Living -> Kitchen -> Office", "rooms": [], "doors": []},
     )
 
-    assert "one realistic 16:9 wide architectural interior view" in prompt
+    assert "one realistic 16:9 wide architectural interior panorama" in prompt
     assert "Use a single camera only" in prompt
-    assert "facing positive X" in prompt
     assert "Use this JSON geometry as the source of truth" in prompt
     assert "Do not reorder rooms" in prompt
     assert "Living -> Kitchen -> Office" in prompt
-    assert "left hemisphere" not in prompt
-    assert "right hemisphere" not in prompt
 
 
 def test_generate_floor_plan_endpoint_rejects_incomplete_draft(monkeypatch, tmp_path) -> None:

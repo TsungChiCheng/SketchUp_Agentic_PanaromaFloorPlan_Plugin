@@ -216,7 +216,7 @@ PanoramaOutputResolution = Literal["1024x576", "1536x864", "1792x1008"]
 class PanoramaGenerationRequest(StrictModel):
     decoration_path: str = Field(min_length=1)
     style: str = Field(min_length=1)
-    output_resolution: PanoramaOutputResolution = "1536x864"
+    output_resolution: PanoramaOutputResolution = "1024x576"
 
     @field_validator("decoration_path")
     @classmethod

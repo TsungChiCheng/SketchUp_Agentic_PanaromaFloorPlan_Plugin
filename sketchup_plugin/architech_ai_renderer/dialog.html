@@ -174,7 +174,7 @@
       }
 
       .preview-grid img.panorama-preview {
-        aspect-ratio: 16 / 9;
+        aspect-ratio: 32 / 9;
       }
 
       .composer {
@@ -837,7 +837,7 @@
           const response = await postBackend("/generate/panorama", {
             decoration_path: decorationPath,
             style: style.value,
-            output_resolution: "1536x864"
+            output_resolution: "1024x576"
           });
           const hydrated = await hydratePanoramaResult(response);
           setRunning(false);

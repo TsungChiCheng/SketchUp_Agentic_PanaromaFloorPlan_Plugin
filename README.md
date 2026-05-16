@@ -126,7 +126,7 @@ Panorama generation is a direct backend tool flow, enabled only after the plugin
 
 ![SketchUp Agentic text2image Plugin panorama flow](docs/panorama-flow.svg)
 
-The plugin calls `/generate/panorama` directly for this path; it does not add an `/agent/orchestrate` intent. The backend converts the floor-plan JSON into a whole-layout scene description and renders four 16:9 wide candidate views from a west exterior front door when present, otherwise from the layout left-wall midpoint, facing positive X so the user can select the preferred option.
+The plugin calls `/generate/panorama` directly for this path; it does not add an `/agent/orchestrate` intent. The backend converts the floor-plan JSON into a whole-layout scene description and renders two direct 16:9 panorama options from the floor-plan center so the user can select the preferred option.
 
 SketchUp-local actions still run through Ruby callbacks because they need access to `Sketchup.active_model`: opening the large floor-plan viewer for local files, importing render PNGs, revealing point-cloud files, and importing supported point-cloud formats.
 

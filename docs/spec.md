@@ -123,12 +123,12 @@ Accepts:
 
 - `decoration_path` for a plotted floor-plan decoration JSON artifact
 - `style`
-- optional 16:9 `output_resolution`
+- optional per-panel 16:9 `output_resolution`, default `1024x576`; OpenAI requests use provider `auto` sizing and normalize returned panels to this value
 
 Returns:
 
 - whole-layout natural-language scene description
-- default panorama PNG artifact path plus four 16:9 candidate panorama PNG artifact paths
+- default panorama PNG artifact path plus two 16:9 candidate panorama PNG artifact paths
 - warnings and error message
 
 ### `POST /agent/orchestrate`
@@ -198,7 +198,7 @@ Floor-plan requests use the existing discussion flow before plotting:
 8. The dialog downloads the SVG, decoration JSON, and PNG compatibility preview artifacts through `/artifacts/download`, then displays the SVG preview in the chat. Clicking the small preview opens the SVG in a larger SketchUp dialog.
 9. The dialog offers `Generate Room Renders`, which directly calls `/agent/orchestrate` as `room_render_generate` using the latest decoration JSON.
 10. `RoomRenderTool` turns each selected room, or all rooms by default, into room-level interior PNG artifacts and returns preview/download paths.
-11. When the latest floor-plan decoration JSON path exists, the dialog also offers `Generate Panorama`, which calls `/generate/panorama` directly. The backend describes the whole layout from a west exterior front door when present, otherwise from the layout left-wall midpoint, with the viewer facing positive X, renders four 16:9 wide candidate images, and returns those PNG artifacts so the user can select the preferred option.
+11. When the latest floor-plan decoration JSON path exists, the dialog also offers `Generate Panorama`, which calls `/generate/panorama` directly. The backend describes the whole layout from the floor-plan center, generates two direct 16:9 panorama PNG options, and returns those artifacts so the user can select the preferred option.
 
 V1 plotting is LLM-tool-authored and diagrammatic: the backend validates that enough structured details exist, then `FloorPlanDecorationTool` produces room/furniture/door arrangement as JSON and `FloorPlanPlotTool` produces the SVG drawing through the configured OpenAI model. The workflow does not infer rooms from SketchUp geometry, and plotting requires `OPENAI_API_KEY`.
 

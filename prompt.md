@@ -8,10 +8,8 @@ Source of truth: `test.ipynb`.
 | 2 | Continued discussion with existing draft | `POST /agent/orchestrate` | `Office 20x10 adjacent to Living & Kitchen with doors. ` |
 | 3 | Plot trigger | `POST /agent/orchestrate` | `plot the floor plan` plus `temporary_floor_plan_draft`|
 | 4 | Artifact download | `POST /artifacts/download` | `svg_path`, `preview_image_path`, and `decoration_path` from step 3 |
-| 5 | Room render generation | `POST /agent/orchestrate` | `generate room renders` plus `latest_floor_plan_decoration_path` from step 3 and `selected_room_names: []` |
-| 6 | Room render downloads | `POST /artifacts/download` | Every `output_image_path` returned by step 5 |
-| 7 | Panorama generation | `POST /generate/panorama` | `decoration_path` from step 3, `style: modern interior`, and `output_resolution: 1024x576` |
-| 8 | Panorama downloads | `POST /artifacts/download` | Every path in `panorama_image_paths` returned by step 7 |
+| 5 | Panorama generation | `POST /generate/panorama` | `decoration_path` from step 3, `style: modern interior`, and per-panel `output_resolution: 1024x576` |
+| 6 | Panorama downloads | `POST /artifacts/download` | Every path in `panorama_image_paths` returned by step 5 |
 
 Required routes checked by the notebook:
 
@@ -24,14 +22,14 @@ Expected generated local artifacts:
 - `outputs/notebook-floor-plan/*.svg`
 - `outputs/notebook-floor-plan/*.png`
 - `outputs/notebook-floor-plan/*.layout.json`
-- `outputs/notebook-floor-plan/room-renders/*.png`
 - `outputs/notebook-floor-plan/panorama/*.png`
 
 Panorama assertions:
 
 - The endpoint is called directly through `/generate/panorama`, not `/agent/orchestrate`.
-- `scene_description` mentions a person facing the positive X-axis from the west exterior front door when present, otherwise from the left wall midpoint fallback.
-- The generated image prompts ask for four single-camera 16:9 wide architectural interior view options.
+- `scene_description` mentions a person at the floor-plan center coordinate.
+- The generated prompts ask for two direct 16:9 panorama options using image generation only.
 - The generated image prompts include a compact `FLOOR_PLAN_GEOMETRY_JSON` block.
 - The generated image prompts state that JSON geometry is the source of truth and rooms must not be reordered.
-- All four panorama artifacts are `1024x576`.
+- OpenAI panorama provider requests use `size: auto`, then the backend normalizes panels to the requested 16:9 `output_resolution`.
+- All two panorama artifacts are `1024x576` when the per-panel request is `1024x576`.

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 from uuid import uuid4
+from xml.dom import minidom
 
 import httpx
 from PIL import Image, ImageDraw, ImageFont
@@ -350,7 +351,12 @@ def sanitize_agent_svg(svg: str) -> str:
     forbidden = re.compile(r"<\s*(script|foreignObject)\b|on[a-zA-Z]+\s*=", re.IGNORECASE)
     if forbidden.search(stripped):
         raise FloorPlanError("FloorPlanPlotTool returned unsafe SVG content.")
-    return stripped
+    repaired = re.sub(r"&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)", "&amp;", stripped)
+    try:
+        minidom.parseString(repaired)
+    except Exception as exc:
+        raise FloorPlanError(f"FloorPlanPlotTool returned malformed SVG XML: {exc}") from exc
+    return repaired
 
 
 def render_preview_png(request: FloorPlanGenerationRequest, output_path: Path) -> None:

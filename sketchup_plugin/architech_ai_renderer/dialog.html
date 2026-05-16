@@ -173,6 +173,10 @@
         outline-offset: 2px;
       }
 
+      .preview-grid img.panorama-preview {
+        aspect-ratio: 16 / 9;
+      }
+
       .composer {
         border: 1px solid #d8dde6;
         border-radius: 8px;
@@ -282,6 +286,7 @@
       let lastPng = null;
       let lastPointCloud = null;
       let lastFloorPlan = null;
+      let lastPanorama = null;
       let backendUrl = "";
       let temporaryTextToImagePrompt = "";
       let temporaryFloorPlanDraft = null;
@@ -520,7 +525,72 @@
           const choices = document.createElement("div");
           choices.className = "choice-row";
           choices.append(choiceButton("Generate Room Renders", () => generateRoomRenders(payload), { disableSiblings: false }));
+          if (payload.decoration_path || payload.local_decoration_path) {
+            choices.append(choiceButton("Generate Panorama", () => generatePanorama(payload), { disableSiblings: false }));
+          }
           message.appendChild(choices);
+        }
+
+        thread.appendChild(message);
+        scrollThread();
+      }
+
+      function appendPanoramaResult(payload) {
+        const message = document.createElement("article");
+        message.className = "message agent";
+        message.append(document.createTextNode(
+          payload.status === "success"
+            ? "Done. I generated the floor-plan panorama."
+            : (payload.error_message || "Panorama generation failed.")
+        ));
+        appendTimestamp(message);
+
+        if (payload.status === "success") {
+          lastPanorama = payload;
+          const panoramaPaths = payload.panorama_image_paths && payload.panorama_image_paths.length
+            ? payload.panorama_image_paths
+            : [payload.panorama_image_path].filter(Boolean);
+          const artifacts = document.createElement("div");
+          artifacts.className = "artifact-grid";
+          panoramaPaths.forEach((path, index) => {
+            artifacts.appendChild(artifactCard(`Option ${index + 1}`, path));
+          });
+          message.appendChild(artifacts);
+
+          const previewUrls = payload.panorama_preview_urls && payload.panorama_preview_urls.length
+            ? payload.panorama_preview_urls
+            : [payload.panorama_preview_url].filter(Boolean);
+          if (previewUrls.length) {
+            const previews = document.createElement("div");
+            previews.className = "preview-grid";
+            previewUrls.forEach((url, index) => {
+              const preview = previewImage(url, `Generated panorama option ${index + 1}`);
+              if (preview) {
+                preview.classList.add("panorama-preview");
+                preview.title = `Panorama option ${index + 1}`;
+                previews.appendChild(preview);
+              }
+            });
+            message.appendChild(previews);
+          }
+
+          const choices = document.createElement("div");
+          choices.className = "choice-row";
+          panoramaPaths.forEach((path, index) => {
+            choices.appendChild(choiceButton(`Select Option ${index + 1}`, () => {
+              payload.selected_panorama_image_path = path;
+              payload.selected_panorama_index = index + 1;
+              appendMessage("agent", `Selected panorama option ${index + 1}.`);
+            }));
+          });
+          message.appendChild(choices);
+
+          if (payload.scene_description) {
+            const note = document.createElement("div");
+            note.className = "hint";
+            note.textContent = payload.scene_description;
+            message.appendChild(note);
+          }
         }
 
         thread.appendChild(message);
@@ -745,6 +815,44 @@
         runDirectFloorPlanOrchestration(payload);
       }
 
+      async function generatePanorama(floorPlan = null) {
+        if (isRunning) {
+          appendMessage("agent", "I am already running a request.");
+          return;
+        }
+        const activeFloorPlan = floorPlan || lastFloorPlan;
+        const decorationPath = activeFloorPlan && (activeFloorPlan.decoration_path || activeFloorPlan.local_decoration_path);
+        if (!decorationPath) {
+          appendMessage("agent", "I need a plotted floor-plan JSON before generating a panorama.");
+          return;
+        }
+        if (!backendUrl) {
+          appendMessage("agent", "I do not have a backend URL yet. Restart SketchUp to reload the synced extension.");
+          return;
+        }
+        setRunning(true, "Panorama", 300000);
+        setStatus("Generating panorama...");
+        pendingMessage = appendMessage("agent", "Generating a panorama from the floor-plan JSON...", "pending");
+        try {
+          const response = await postBackend("/generate/panorama", {
+            decoration_path: decorationPath,
+            style: style.value,
+            output_resolution: "1536x864"
+          });
+          const hydrated = await hydratePanoramaResult(response);
+          setRunning(false);
+          removePendingMessage();
+          setStatus(hydrated.status === "success" ? "Panorama complete." : "Panorama failed.");
+          appendPanoramaResult(hydrated);
+          setResult(hydrated);
+        } catch (error) {
+          removePendingMessage();
+          setRunning(false);
+          setStatus("Backend request failed.");
+          appendMessage("agent", `Could not generate panorama: ${error.message || error}`);
+        }
+      }
+
       function plotFloorPlan(draft = null) {
         if (isRunning) {
           if (runningOperation === "Floor-plan plot" && runningStartedAt) {
@@ -916,6 +1024,19 @@
               room.render_preview_url = await downloadArtifactDataUrl(room.output_image_path, "image/png");
             }
           }
+        }
+        return payload;
+      }
+
+      async function hydratePanoramaResult(payload) {
+        const paths = payload.panorama_image_paths && payload.panorama_image_paths.length
+          ? payload.panorama_image_paths
+          : [payload.panorama_image_path].filter(Boolean);
+        if (paths.length) {
+          payload.panorama_preview_urls = await Promise.all(
+            paths.map((path) => downloadArtifactDataUrl(path, "image/png"))
+          );
+          payload.panorama_preview_url = payload.panorama_preview_urls[0];
         }
         return payload;
       }

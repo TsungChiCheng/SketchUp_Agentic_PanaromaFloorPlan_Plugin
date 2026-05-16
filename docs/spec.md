@@ -35,6 +35,7 @@ FastAPI Backend
   /generate/png
   /edit/image
   /generate/floor-plan
+  /generate/panorama
   /generate/point-cloud
   /agent/orchestrate
   /agent/run
@@ -116,6 +117,20 @@ Returns:
 - room count
 - warnings
 
+### `POST /generate/panorama`
+
+Accepts:
+
+- `decoration_path` for a plotted floor-plan decoration JSON artifact
+- `style`
+- optional 16:9 `output_resolution`
+
+Returns:
+
+- whole-layout natural-language scene description
+- default panorama PNG artifact path plus four 16:9 candidate panorama PNG artifact paths
+- warnings and error message
+
 ### `POST /agent/orchestrate`
 
 Accepts the render request schema plus latest dialog state:
@@ -152,6 +167,7 @@ V1 uses internal backend tools rather than a standalone MCP server:
 - `FloorPlanDecorationTool`
 - `FloorPlanPlotTool`
 - `RoomRenderTool`
+- `PanoramaTool`
 - `LangChainAgentPipeline`
 - `DeterministicAgentFallback`
 
@@ -165,6 +181,8 @@ SketchUp-local import tools are implemented as guarded dialog callbacks because 
 After artifact generation, the dialog asks the user whether to import the PNG. For geometry artifacts, the dialog always offers Reveal. PLY/LAS point-cloud import depends on a compatible importer, such as Scan Essentials. OBJ remains available as an optional mesh format.
 
 The tools are structured so they can later be exposed through an MCP server without changing the endpoint contracts.
+
+Panorama generation is documented as a direct backend-tool flow in `docs/panorama-flow.svg`. It is enabled by the SketchUp plugin only when a plotted floor-plan decoration JSON path is available, calls `/generate/panorama` directly, and stays outside `/agent/orchestrate`.
 
 ## Floor-Plan Workflow
 
@@ -180,6 +198,7 @@ Floor-plan requests use the existing discussion flow before plotting:
 8. The dialog downloads the SVG, decoration JSON, and PNG compatibility preview artifacts through `/artifacts/download`, then displays the SVG preview in the chat. Clicking the small preview opens the SVG in a larger SketchUp dialog.
 9. The dialog offers `Generate Room Renders`, which directly calls `/agent/orchestrate` as `room_render_generate` using the latest decoration JSON.
 10. `RoomRenderTool` turns each selected room, or all rooms by default, into room-level interior PNG artifacts and returns preview/download paths.
+11. When the latest floor-plan decoration JSON path exists, the dialog also offers `Generate Panorama`, which calls `/generate/panorama` directly. The backend describes the whole layout from a west exterior front door when present, otherwise from the layout left-wall midpoint, with the viewer facing positive X, renders four 16:9 wide candidate images, and returns those PNG artifacts so the user can select the preferred option.
 
 V1 plotting is LLM-tool-authored and diagrammatic: the backend validates that enough structured details exist, then `FloorPlanDecorationTool` produces room/furniture/door arrangement as JSON and `FloorPlanPlotTool` produces the SVG drawing through the configured OpenAI model. The workflow does not infer rooms from SketchUp geometry, and plotting requires `OPENAI_API_KEY`.
 
@@ -201,6 +220,7 @@ Current implementation provides deterministic fallback depth for local tests. Pr
 
 - Backend exposes `/generate/png`, `/generate/point-cloud`, and `/agent/run`.
 - Backend exposes `/generate/floor-plan`.
+- Backend exposes `/generate/panorama` as a direct tool endpoint that does not require `/agent/orchestrate`.
 - Backend exposes `/edit/image`.
 - Backend exposes `/uploads/viewport`, `/artifacts/download`, and `/agent/orchestrate`.
 - Agent does not generate images for conversational-only prompts.

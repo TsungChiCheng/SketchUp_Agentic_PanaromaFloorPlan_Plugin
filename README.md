@@ -12,6 +12,7 @@ The current pipeline can:
 - Route dialog messages through `/agent/orchestrate` so generate, edit, discuss, floor-plan discussion, plotting, room-render generation, and clarification flows are handled by the backend instead of frontend keyword checks.
 - Discuss floor-plan requirements, keep the structured draft in dialog state, then use Plot Floor Plan to send that draft back through `/agent/orchestrate` for LLM-supported decoration JSON and SVG plotting.
 - Generate room-level interior PNGs from the plotted floor-plan decoration JSON through the same backend orchestrator flow.
+- Generate a whole-plan panorama directly from the plotted floor-plan decoration JSON through `/generate/panorama`.
 - Download generated backend artifacts back to the SketchUp machine for preview, reveal, and import actions.
 
 Detailed endpoint contracts, coordinate conventions, limits, and implementation notes live in `docs/`.
@@ -93,7 +94,8 @@ sketchup_plugin/
   artifact download, reveal/import callbacks, and style presets.
 
 docs/
-  Product spec, implementation notes, architecture diagram, and current UI mock.
+  Product spec, implementation notes, architecture diagram, panorama flow,
+  and current UI mock.
 
 examples/
   Example render request/response payloads.
@@ -108,6 +110,7 @@ Key files:
 
 - `backend/prompts.py`: agent system prompts, image prompts, tool descriptions, intent-classifier prompt, and prompt message builders.
 - `backend/orchestrator.py`: generate/edit/discuss/floor-plan/other routing for dialog requests.
+- `backend/panorama_tool.py`: direct floor-plan JSON to panorama image tool.
 - `backend/agent_pipeline.py`: LangChain/OpenAI tool-calling path and deterministic fallback.
 - `depth_service/service.py`: image-depth projection and point-cloud writers.
 - `sketchup_plugin/architech_ai_renderer/main.rb`: SketchUp dialog callbacks and import/reveal behavior.
@@ -118,6 +121,12 @@ Key files:
 ![SketchUp Agentic text2image Plugin agent architecture](docs/agent-architecture.svg)
 
 Render and edit flows export the SketchUp viewport through the Ruby bridge, upload it to the backend, call `/agent/orchestrate`, run the selected tool path, download artifacts, then preview/reveal/import them locally. Floor-plan chat prompts, `Plot Floor Plan`, and `Generate Room Renders` use a direct HtmlDialog `fetch` to `${backend_url}/agent/orchestrate`; these flows send draft or decoration JSON state and do not upload the viewport. The dialog then downloads SVG, PNG, and room-render artifacts through `/artifacts/download` for local previews.
+
+Panorama generation is a direct backend tool flow, enabled only after the plugin has a plotted floor-plan decoration JSON path:
+
+![SketchUp Agentic text2image Plugin panorama flow](docs/panorama-flow.svg)
+
+The plugin calls `/generate/panorama` directly for this path; it does not add an `/agent/orchestrate` intent. The backend converts the floor-plan JSON into a whole-layout scene description and renders four 16:9 wide candidate views from a west exterior front door when present, otherwise from the layout left-wall midpoint, facing positive X so the user can select the preferred option.
 
 SketchUp-local actions still run through Ruby callbacks because they need access to `Sketchup.active_model`: opening the large floor-plan viewer for local files, importing render PNGs, revealing point-cloud files, and importing supported point-cloud formats.
 
@@ -148,6 +157,7 @@ Generated point-cloud files can always be revealed locally. Direct PLY/LAS impor
 - Product and endpoint spec: `docs/spec.md`
 - Implementation checklist and verification notes: `docs/implementation.md`
 - Agent architecture diagram: `docs/agent-architecture.svg`
+- Panorama tool flow: `docs/panorama-flow.svg`
 - Current SketchUp dialog mock: `docs/current-extension-ui.svg`
 
 ## Tests

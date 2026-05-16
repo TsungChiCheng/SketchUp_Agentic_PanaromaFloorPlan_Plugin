@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 import re
 from typing import Any
 
@@ -8,7 +9,12 @@ from pydantic import ValidationError
 from agent_pipeline import run_agent_pipeline
 from floor_plan_tool import FloorPlanConfigurationError, FloorPlanError, floor_plan_missing_fields, generate_floor_plan
 from point_cloud_tool import generate_point_cloud
-from prompts import ORCHESTRATOR_INTENT_SYSTEM_PROMPT, compose_intent_classifier_user_message
+from prompts import (
+    FLOOR_PLAN_DRAFT_SYSTEM_PROMPT,
+    ORCHESTRATOR_INTENT_SYSTEM_PROMPT,
+    compose_floor_plan_draft_user_message,
+    compose_intent_classifier_user_message,
+)
 from renderers import edit_image
 from room_render_tool import RoomRenderConfigurationError, RoomRenderError, generate_room_renders
 from schemas import (
@@ -167,7 +173,7 @@ def run_orchestrator(request: AgentOrchestrateRequest, settings: Settings) -> Ag
         )
 
     if intent == "floor_plan_discuss":
-        draft = update_floor_plan_draft(request.temporary_floor_plan_draft, request.user_prompt or "")
+        draft = update_floor_plan_draft(request.temporary_floor_plan_draft, request.user_prompt or "", settings, api_calls)
         missing = floor_plan_missing_fields(FloorPlanGenerationRequest.model_validate(draft.model_dump()))
         ready = not missing
         return AgentOrchestrateResponse(
@@ -375,7 +381,62 @@ def classify_intent_deterministically(request: AgentOrchestrateRequest) -> dict[
     return {"intent": "other", "assigned_agent": "FallbackClarificationAgent", "message": "Please provide a rendering instruction."}
 
 
-def update_floor_plan_draft(existing: FloorPlanDraft | None, prompt: str) -> FloorPlanDraft:
+def update_floor_plan_draft(
+    existing: FloorPlanDraft | None,
+    prompt: str,
+    settings: Settings | None = None,
+    api_calls: list[dict[str, Any]] | None = None,
+) -> FloorPlanDraft:
+    if settings and settings.openai_api_key:
+        try:
+            return update_floor_plan_draft_with_openai(existing, prompt, settings, api_calls)
+        except Exception:
+            pass
+    return update_floor_plan_draft_deterministically(existing, prompt)
+
+
+def update_floor_plan_draft_with_openai(
+    existing: FloorPlanDraft | None,
+    prompt: str,
+    settings: Settings,
+    api_calls: list[dict[str, Any]] | None = None,
+) -> FloorPlanDraft:
+    if not settings.openai_api_key:
+        raise ValueError("OPENAI_API_KEY is required for FloorPlanDraftParserTool.")
+    if api_calls is not None:
+        api_calls.append(_api_call("OpenAI FloorPlanDraftParserTool", prompt))
+    response = httpx.post(
+        "https://api.openai.com/v1/chat/completions",
+        headers={"Authorization": f"Bearer {settings.openai_api_key}"},
+        json={
+            "model": settings.agent_model,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {
+                    "role": "system",
+                    "content": FLOOR_PLAN_DRAFT_SYSTEM_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": compose_floor_plan_draft_user_message(
+                        existing.model_dump() if existing else None,
+                        prompt,
+                    ),
+                },
+            ],
+        },
+        timeout=30.0,
+    )
+    response.raise_for_status()
+    content = response.json()["choices"][0]["message"]["content"]
+    parsed = json.loads(content)
+    if "floor_plan_draft" in parsed and isinstance(parsed["floor_plan_draft"], dict):
+        parsed = parsed["floor_plan_draft"]
+    return FloorPlanDraft.model_validate(parsed)
+
+
+def update_floor_plan_draft_deterministically(existing: FloorPlanDraft | None, prompt: str) -> FloorPlanDraft:
     draft = existing or FloorPlanDraft()
     data = draft.model_dump()
     title_match = re.search(r"(?:title|named|called)\s+['\"]?([A-Za-z0-9][A-Za-z0-9 \-]{2,60})", prompt, re.IGNORECASE)
@@ -392,7 +453,7 @@ def update_floor_plan_draft(existing: FloorPlanDraft | None, prompt: str) -> Flo
         }
     data["rooms"] = list(rooms_by_name.values())
 
-    if len(data["rooms"]) > 1 and re.search(r"\b(adjacent|next to|connected|open to|beside|between|layout)\b", prompt, re.IGNORECASE):
+    if len(data["rooms"]) > 1 and re.search(r"\b(adjacent|next to|connect|connected|open to|beside|between|layout|sequence|sequential)\b|(?:->|→)", prompt, re.IGNORECASE):
         names = [room["name"] for room in data["rooms"]]
         data["adjacencies"] = _unique_pairs([*data.get("adjacencies", []), *zip(names, names[1:])])
 

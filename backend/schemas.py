@@ -210,6 +210,37 @@ class RoomRenderGenerationResponse(StrictModel):
     error_message: str | None = None
 
 
+PanoramaOutputResolution = Literal["1024x576", "1536x864", "1792x1008"]
+
+
+class PanoramaGenerationRequest(StrictModel):
+    decoration_path: str = Field(min_length=1)
+    style: str = Field(min_length=1)
+    output_resolution: PanoramaOutputResolution = "1536x864"
+
+    @field_validator("decoration_path")
+    @classmethod
+    def validate_decoration_path(cls, value: str) -> str:
+        lowered = value.lower()
+        if "\x00" in value:
+            raise ValueError("decoration_path contains an invalid null byte")
+        if not lowered.endswith(".json"):
+            raise ValueError("decoration_path must point to a JSON layout artifact")
+        return value
+
+
+class PanoramaGenerationResponse(StrictModel):
+    status: Literal["success", "failed"]
+    artifact_id: str
+    decoration_path: str
+    style: str
+    scene_description: str
+    panorama_image_path: str | None = None
+    panorama_image_paths: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    error_message: str | None = None
+
+
 class PngGenerationRequest(RenderRequest):
     pass
 

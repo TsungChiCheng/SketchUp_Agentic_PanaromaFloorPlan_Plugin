@@ -1,4 +1,5 @@
 from pathlib import Path
+import base64
 import json
 
 import httpx
@@ -13,9 +14,10 @@ from floor_plan_tool import (
     generate_floor_plan,
     plot_svg_with_openai,
 )
+from panorama_tool import compose_geometry_context, compose_panorama_prompt, compose_scene_description, generate_panorama
 from room_render_tool import compose_room_render_prompt, generate_room_renders
 from main import app
-from schemas import FloorPlanGenerationRequest, RoomRenderGenerationRequest
+from schemas import FloorPlanGenerationRequest, PanoramaGenerationRequest, RoomRenderGenerationRequest
 from settings import get_settings
 from test_schemas import valid_render_payload
 
@@ -263,6 +265,202 @@ def test_generate_room_renders_openai_writes_each_room(monkeypatch, tmp_path) ->
     assert all(Path(room["output_image_path"]).read_bytes() == b"output image" for room in body["rooms"])
 
 
+def test_panorama_scene_description_uses_whole_layout_context() -> None:
+    layout = decorated_layout_payload()["decorated_layout"]
+
+    description = compose_scene_description(layout)
+
+    assert "facing the positive X-axis" in description
+    assert "left wall midpoint fallback" in description
+    assert "Living" in description
+    assert "Kitchen" in description
+    assert "Sofa" in description
+    assert "opening from Living to Kitchen" in description
+
+
+def test_panorama_geometry_context_preserves_layout_coordinates() -> None:
+    layout = {
+        "rooms": [
+            {"name": "Living", "x": 0, "y": 0, "width": 12, "depth": 10},
+            {"name": "Kitchen", "x": 12, "y": 0, "width": 8, "depth": 10},
+            {"name": "Office", "x": 20, "y": 0, "width": 20, "depth": 10},
+        ],
+        "doors": [
+            {"from_room": "Living", "to_room": "Kitchen", "wall": "east", "x": 12, "y": 4, "width": 3},
+            {"from_room": "Kitchen", "to_room": "Office", "wall": "east", "x": 20, "y": 4, "width": 3},
+        ],
+    }
+
+    context = compose_geometry_context(layout)
+
+    assert context["camera"]["position"] == {"x": 0.0, "y": 5.0}
+    assert context["camera"]["facing"] == "+X"
+    assert context["camera"]["source"] == "left_center_fallback"
+    assert context["visual_order"] == "Living -> Kitchen -> Office"
+    assert context["rooms"][1] == {
+        "name": "Kitchen",
+        "x": 12.0,
+        "y": 0.0,
+        "width": 8.0,
+        "depth": 10.0,
+        "center": {"x": 16.0, "y": 5.0},
+    }
+    assert context["doors"][1]["from_room"] == "Kitchen"
+    assert context["doors"][1]["to_room"] == "Office"
+
+
+def test_panorama_geometry_context_uses_west_front_door_camera() -> None:
+    layout = {
+        "rooms": [
+            {"name": "Living", "x": 0, "y": 0, "width": 12, "depth": 10},
+            {"name": "Kitchen", "x": 12, "y": 0, "width": 8, "depth": 10},
+        ],
+        "doors": [
+            {"from_room": "Living", "to_room": None, "wall": "west", "x": 0, "y": 8.5, "width": 3},
+            {"from_room": "Living", "to_room": "Kitchen", "wall": "east", "x": 12, "y": 4, "width": 3},
+        ],
+    }
+
+    context = compose_geometry_context(layout)
+    description = compose_scene_description(layout)
+
+    assert context["camera"]["position"] == {"x": 0.0, "y": 8.5}
+    assert context["camera"]["facing"] == "+X"
+    assert context["camera"]["source"] == "front_door_west"
+    assert "west exterior front-door coordinate" in description
+    assert "coordinate (0.00, 8.50)" in description
+
+
+def test_panorama_geometry_context_uses_lowest_y_west_front_door() -> None:
+    layout = {
+        "rooms": [{"name": "Living", "x": 0, "y": 0, "width": 12, "depth": 14}],
+        "doors": [
+            {"from_room": "Living", "to_room": "outside", "wall": "west", "x": 0, "y": 8.5, "width": 3},
+            {"from_room": "Living", "to_room": "", "wall": "west", "x": 0, "y": 2.0, "width": 3},
+            {"from_room": "Living", "to_room": None, "wall": "south", "x": 4, "y": 14, "width": 3},
+        ],
+    }
+
+    context = compose_geometry_context(layout)
+
+    assert context["camera"]["position"] == {"x": 0.0, "y": 2.0}
+    assert context["camera"]["source"] == "front_door_west"
+
+
+def test_generate_panorama_uses_mock_provider(monkeypatch, tmp_path) -> None:
+    decoration_path = tmp_path / "floorplan.layout.json"
+    decoration_path.write_text(json.dumps(decorated_layout_payload()), encoding="utf-8")
+    monkeypatch.delenv("RENDER_PROVIDER", raising=False)
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+    request = PanoramaGenerationRequest(
+        decoration_path=str(decoration_path),
+        style="modern interior",
+        output_resolution="1024x576",
+    )
+
+    response = generate_panorama(request, get_settings())
+
+    assert response.status == "success"
+    assert response.artifact_id.startswith("panorama_")
+    assert response.panorama_image_path
+    assert len(response.panorama_image_paths) == 4
+    from PIL import Image
+
+    assert response.panorama_image_path == response.panorama_image_paths[0]
+    for image_path in response.panorama_image_paths:
+        assert Image.open(image_path).size == (1024, 576)
+
+
+def test_generate_panorama_endpoint_returns_artifacts(monkeypatch, tmp_path) -> None:
+    decoration_path = tmp_path / "floorplan.layout.json"
+    decoration_path.write_text(json.dumps(decorated_layout_payload()), encoding="utf-8")
+    monkeypatch.delenv("RENDER_PROVIDER", raising=False)
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+    client = TestClient(app)
+
+    response = client.post(
+        "/generate/panorama",
+        json={"decoration_path": str(decoration_path), "style": "modern interior", "output_resolution": "1024x576"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert "left_image_path" not in body
+    assert "right_image_path" not in body
+    assert body["panorama_image_path"].endswith("_option_1.png")
+    assert len(body["panorama_image_paths"]) == 4
+    assert all(path.endswith(f"_option_{index}.png") for index, path in enumerate(body["panorama_image_paths"], start=1))
+    assert "positive X-axis" in body["scene_description"]
+
+
+def test_generate_panorama_openai_renders_single_image(monkeypatch, tmp_path) -> None:
+    decoration_path = tmp_path / "floorplan.layout.json"
+    decoration_path.write_text(json.dumps(decorated_layout_payload()), encoding="utf-8")
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setenv("RENDER_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
+    prompts = []
+    from PIL import Image
+    from io import BytesIO
+
+    image = Image.new("RGB", (32, 32), "#ffffff")
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    image_b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
+
+    def fake_post(*args, **kwargs):
+        assert args[0] == "https://api.openai.com/v1/images/generations"
+        assert kwargs["json"]["size"] == "1024x1024"
+        prompts.append(kwargs["json"]["prompt"])
+        return httpx.Response(200, json={"data": [{"b64_json": image_b64}]})
+
+    monkeypatch.setattr("panorama_tool.httpx.post", fake_post)
+    request = PanoramaGenerationRequest(
+        decoration_path=str(decoration_path),
+        style="modern interior",
+        output_resolution="1024x576",
+    )
+
+    response = generate_panorama(request, get_settings())
+
+    assert response.status == "success"
+    assert len(prompts) == 4
+    for index, prompt in enumerate(prompts, start=1):
+        assert "one realistic 16:9 wide architectural interior view" in prompt
+        assert "Use a single camera only" in prompt
+        assert "Use this JSON geometry as the source of truth" in prompt
+        assert "Do not reorder rooms" in prompt
+        assert "FLOOR_PLAN_GEOMETRY_JSON:" in prompt
+        assert '"visual_order": "Living -> Kitchen"' in prompt
+        assert '"rooms":' in prompt
+        assert '"doors":' in prompt
+        assert "facing positive X" in prompt
+        assert "wide-angle lens" in prompt
+        assert f"Generate option {index} of 4" in prompt
+        assert "left image then right image" not in prompt
+    assert len(response.panorama_image_paths) == 4
+    for image_path in response.panorama_image_paths:
+        assert Image.open(image_path).size == (1024, 576)
+
+
+def test_panorama_prompt_uses_single_camera() -> None:
+    prompt = compose_panorama_prompt(
+        "The viewer is facing the positive X-axis.",
+        "modern interior",
+        geometry_context={"visual_order": "Living -> Kitchen -> Office", "rooms": [], "doors": []},
+    )
+
+    assert "one realistic 16:9 wide architectural interior view" in prompt
+    assert "Use a single camera only" in prompt
+    assert "facing positive X" in prompt
+    assert "Use this JSON geometry as the source of truth" in prompt
+    assert "Do not reorder rooms" in prompt
+    assert "Living -> Kitchen -> Office" in prompt
+    assert "left hemisphere" not in prompt
+    assert "right hemisphere" not in prompt
+
+
 def test_generate_floor_plan_endpoint_rejects_incomplete_draft(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
@@ -292,6 +490,79 @@ def test_orchestrator_discusses_floor_plan_until_ready() -> None:
     assert body["floor_plan_ready"] is True
     assert body["floor_plan_missing_fields"] == []
     assert [room["name"] for room in body["floor_plan_draft"]["rooms"]] == ["Living", "Kitchen"]
+
+
+def test_orchestrator_accepts_sequence_arrow_floor_plan_prompt() -> None:
+    client = TestClient(app)
+    payload = {
+        **valid_render_payload(),
+        "user_prompt": "Floor plan with Living 12x10 -> Kitchen 8x10 -> Office 20x10 in sequence. Connect Living & Kitchen, Kitchen & Office with doors.",
+    }
+
+    response = client.post("/agent/orchestrate", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    draft = body["floor_plan_draft"]
+    assert body["intent"] == "floor_plan_discuss"
+    assert body["floor_plan_ready"] is True
+    assert body["floor_plan_missing_fields"] == []
+    assert [room["name"] for room in draft["rooms"]] == ["Living", "Kitchen", "Office"]
+    assert draft["adjacencies"] == [["Living", "Kitchen"], ["Kitchen", "Office"]]
+    assert any(door["from_room"] == "Living" and door["to_room"] == "Kitchen" for door in draft["doors"])
+    assert any(door["from_room"] == "Kitchen" and door["to_room"] == "Office" for door in draft["doors"])
+
+
+def test_orchestrator_uses_llm_floor_plan_draft_parser(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
+    system_prompts = []
+
+    def fake_post(*args, **kwargs):
+        assert args[0] == "https://api.openai.com/v1/chat/completions"
+        system_prompt = kwargs["json"]["messages"][0]["content"]
+        system_prompts.append(system_prompt)
+        if "FloorPlanDraftParserTool" in system_prompt:
+            content = {
+                "title": "LLM Parsed Plan",
+                "rooms": [
+                    {"name": "Living", "width": 12, "depth": 10, "label": "Living"},
+                    {"name": "Kitchen", "width": 8, "depth": 10, "label": "Kitchen"},
+                    {"name": "Office", "width": 20, "depth": 10, "label": "Office"},
+                ],
+                "adjacencies": [["Living", "Kitchen"], ["Kitchen", "Office"]],
+                "doors": [
+                    {"from_room": "Living", "to_room": "Kitchen", "wall": "east", "width": 0.9},
+                    {"from_room": "Kitchen", "to_room": "Office", "wall": "east", "width": 0.9},
+                ],
+                "notes": "Parsed by LLM draft parser.",
+            }
+        else:
+            content = {
+                "intent": "floor_plan_discuss",
+                "assigned_agent": "FloorPlanDiscussionAgent",
+                "message": "Discuss and capture floor-plan details before plotting.",
+            }
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", args[0]),
+            json={"choices": [{"message": {"content": json.dumps(content)}}]},
+        )
+
+    monkeypatch.setattr("orchestrator.httpx.post", fake_post)
+    client = TestClient(app)
+    payload = {
+        **valid_render_payload(),
+        "user_prompt": "Floor plan with Living 12x10 -> Kitchen 8x10 -> Office 20x10 in sequence. Connect Living & Kitchen, Kitchen & Office with doors.",
+    }
+
+    response = client.post("/agent/orchestrate", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["floor_plan_ready"] is True
+    assert body["floor_plan_draft"]["title"] == "LLM Parsed Plan"
+    assert any("FloorPlanDraftParserTool" in prompt for prompt in system_prompts)
+    assert any(call["name"] == "OpenAI FloorPlanDraftParserTool" for call in body["api_calls"])
 
 
 def test_orchestrator_continues_floor_plan_discussion_from_existing_draft() -> None:

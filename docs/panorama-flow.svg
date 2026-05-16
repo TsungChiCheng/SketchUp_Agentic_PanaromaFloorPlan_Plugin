@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="720" viewBox="0 0 1180 720" role="img" aria-labelledby="title desc">
+  <title id="title">Architech Panorama Tool Flow</title>
+  <desc id="desc">Flow diagram showing panorama generation as a direct backend tool enabled only when the SketchUp plugin has a plotted floor-plan decoration JSON path. The plugin calls POST /generate/panorama directly, not /agent/orchestrate.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f8fa; }
+      .group { fill: #eef2f7; stroke: #c3ccd8; stroke-width: 1.2; rx: 10; }
+      .box { fill: #ffffff; stroke: #cfd6df; stroke-width: 1.2; rx: 8; }
+      .tool { fill: #eef6ff; stroke: #94b7e8; stroke-width: 1.2; rx: 8; }
+      .plan { fill: #f4f0ff; stroke: #aa93d5; stroke-width: 1.2; rx: 8; }
+      .decision { fill: #fff7e8; stroke: #e1b564; stroke-width: 1.2; }
+      .store { fill: #f2fbf6; stroke: #8bc79d; stroke-width: 1.2; rx: 8; }
+      .warn { fill: #fff1f0; stroke: #df8d82; stroke-width: 1.2; rx: 8; }
+      .title { fill: #202124; font: 700 22px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .h { fill: #202124; font: 700 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .t { fill: #30343a; font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .m { fill: #68717d; font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .edge { fill: none; stroke: #5d6875; stroke-width: 1.4; marker-end: url(#arrow); }
+      .softedge { fill: none; stroke: #8a95a3; stroke-width: 1.2; stroke-dasharray: 5 4; marker-end: url(#arrowSoft); }
+      .noedge { fill: none; stroke: #c4534a; stroke-width: 1.2; stroke-dasharray: 5 4; marker-end: url(#arrowNo); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#5d6875"/>
+    </marker>
+    <marker id="arrowSoft" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#8a95a3"/>
+    </marker>
+    <marker id="arrowNo" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#c4534a"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1180" height="720"/>
+  <text class="title" x="40" y="42">Panorama Flow from Floor-Plan JSON</text>
+  <text class="m" x="40" y="64">The plugin enables Generate Panorama only after a plotted floor-plan decoration JSON exists. Panorama is a direct backend tool, not an agent intent.</text>
+
+  <rect class="group" x="36" y="96" width="312" height="548"/>
+  <text class="h" x="58" y="126">SketchUp plugin</text>
+
+  <rect class="box" x="60" y="152" width="246" height="74"/>
+  <text class="h" x="80" y="178">Plot Floor Plan complete</text>
+  <text class="t" x="80" y="199">Dialog stores latest floor plan</text>
+  <text class="m" x="80" y="214">SVG, preview PNG, decoration JSON</text>
+
+  <rect class="store" x="60" y="258" width="246" height="70"/>
+  <text class="h" x="80" y="284">Plugin floor-plan state</text>
+  <text class="t" x="80" y="305">lastFloorPlan.decoration_path</text>
+  <text class="m" x="80" y="320">or local_decoration_path</text>
+
+  <polygon class="decision" points="183,366 292,430 183,494 74,430"/>
+  <text class="h" x="128" y="424">Floor-plan JSON</text>
+  <text class="m" x="145" y="442">available?</text>
+
+  <rect class="warn" x="60" y="536" width="246" height="66"/>
+  <text class="h" x="80" y="562">No JSON path</text>
+  <text class="t" x="80" y="583">Generate Panorama disabled</text>
+  <text class="m" x="80" y="597">no backend call attempted</text>
+
+  <rect class="tool" x="394" y="96" width="298" height="548"/>
+  <text class="h" x="416" y="126">Direct backend call</text>
+
+  <rect class="box" x="422" y="152" width="236" height="74"/>
+  <text class="h" x="442" y="178">Generate Panorama</text>
+  <text class="t" x="442" y="199">POST /generate/panorama</text>
+  <text class="m" x="442" y="214">not /agent/orchestrate</text>
+
+  <rect class="box" x="422" y="258" width="236" height="70"/>
+  <text class="h" x="442" y="284">Request payload</text>
+  <text class="t" x="442" y="305">decoration_path + style</text>
+  <text class="m" x="442" y="320">optional 16:9 output size</text>
+
+  <rect class="plan" x="422" y="370" width="236" height="84"/>
+  <text class="h" x="442" y="396">JSON to scene text</text>
+  <text class="t" x="442" y="417">rooms, doors, furniture</text>
+  <text class="m" x="442" y="433">front door or left center, +X</text>
+
+  <rect class="warn" x="422" y="506" width="236" height="68"/>
+  <text class="h" x="442" y="532">Agent path stays out</text>
+  <text class="t" x="442" y="553">no classifier prompt changes</text>
+  <text class="m" x="442" y="568">no new orchestrator intent</text>
+
+  <rect class="group" x="738" y="96" width="386" height="548"/>
+  <text class="h" x="760" y="126">Backend PanoramaTool</text>
+
+  <rect class="plan" x="768" y="152" width="304" height="76"/>
+  <text class="h" x="788" y="178">Load decoration JSON</text>
+  <text class="t" x="788" y="199">resolve under OUTPUT_DIR</text>
+  <text class="m" x="788" y="214">reuse floor-plan artifact rules</text>
+
+  <rect class="plan" x="768" y="258" width="304" height="82"/>
+  <text class="h" x="788" y="284">Camera context</text>
+  <text class="t" x="788" y="305">west front door if present</text>
+  <text class="m" x="788" y="321">else left midpoint, positive X</text>
+
+  <rect class="tool" x="768" y="370" width="304" height="76"/>
+  <text class="h" x="788" y="396">Four 16:9 renders</text>
+  <text class="t" x="788" y="417">candidate options</text>
+  <text class="m" x="788" y="433">single camera facing positive X</text>
+
+  <rect class="store" x="768" y="486" width="304" height="94"/>
+  <text class="h" x="788" y="512">Panorama options</text>
+  <text class="t" x="788" y="533">four generated 16:9 PNGs</text>
+  <text class="m" x="788" y="549">user selects preferred option</text>
+  <text class="m" x="788" y="565">returns scene_description too</text>
+
+  <rect class="store" x="394" y="666" width="730" height="38"/>
+  <text class="h" x="416" y="690">Artifacts returned and mirrored locally: option_1.png through option_4.png, scene_description</text>
+
+  <path class="edge" d="M183 226 L183 258"/>
+  <path class="edge" d="M183 328 L183 366"/>
+  <path class="edge" d="M292 430 C344 430 352 189 422 189"/>
+  <path class="noedge" d="M183 494 L183 536"/>
+  <path class="edge" d="M540 226 L540 258"/>
+  <path class="edge" d="M540 328 L540 370"/>
+  <path class="edge" d="M658 412 C704 412 714 190 768 190"/>
+  <path class="edge" d="M920 228 L920 258"/>
+  <path class="edge" d="M920 340 L920 370"/>
+  <path class="edge" d="M920 446 C920 466 920 472 920 486"/>
+  <path class="edge" d="M920 580 C920 628 808 646 760 666"/>
+  <path class="softedge" d="M760 666 C570 638 326 652 183 602"/>
+
+  <text class="m" x="310" y="396">yes: enable button</text>
+  <text class="m" x="194" y="522">no</text>
+  <text class="m" x="496" y="244">direct tool endpoint</text>
+  <text class="m" x="682" y="386">floor-plan JSON only</text>
+  <text class="m" x="874" y="360">4 options</text>
+</svg>

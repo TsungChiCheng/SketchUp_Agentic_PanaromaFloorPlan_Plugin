@@ -9,6 +9,7 @@ from agent import suggest_prompt
 from agent_pipeline import run_agent_pipeline
 from floor_plan_tool import FloorPlanConfigurationError, FloorPlanError, generate_floor_plan
 from orchestrator import run_orchestrator
+from panorama_tool import PanoramaConfigurationError, PanoramaError, generate_panorama
 from png_tool import generate_png
 from point_cloud_tool import PointCloudServiceError, generate_point_cloud
 from renderers import RenderConfigurationError, RenderServiceError, render_image
@@ -20,6 +21,8 @@ from schemas import (
     AgentOrchestrateRequest,
     AgentOrchestrateResponse,
     ImageEditRequest,
+    PanoramaGenerationRequest,
+    PanoramaGenerationResponse,
     PngGenerationRequest,
     PngGenerationResponse,
     PointCloudGenerationRequest,
@@ -189,6 +192,17 @@ def generate_room_renders_endpoint(request: RoomRenderGenerationRequest) -> Room
     except RoomRenderConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except RoomRenderError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/generate/panorama", response_model=PanoramaGenerationResponse)
+def generate_panorama_endpoint(request: PanoramaGenerationRequest) -> PanoramaGenerationResponse:
+    log_backend_call("POST /generate/panorama", request.decoration_path)
+    try:
+        return generate_panorama(request, get_settings())
+    except PanoramaConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except PanoramaError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 

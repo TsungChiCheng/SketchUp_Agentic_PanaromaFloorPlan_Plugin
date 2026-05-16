@@ -25,6 +25,22 @@ ORCHESTRATOR_INTENT_SYSTEM_PROMPT = (
     "Return JSON with intent, assigned_agent, message, and optional text_to_image_prompt."
 )
 
+FLOOR_PLAN_DRAFT_SYSTEM_PROMPT = (
+    "You are FloorPlanDraftParserTool, a backend JSON extraction tool for Architech floor-plan discussions. "
+    "Convert the latest user message plus any existing draft into one complete floor-plan draft JSON object. "
+    "Return only JSON with this exact top-level shape: "
+    "{\"title\": string, \"rooms\": [{\"name\": string, \"width\": number, \"depth\": number, \"label\": string}], "
+    "\"adjacencies\": [[string, string]], \"doors\": [{\"from_room\": string, \"to_room\": string or null, \"wall\": \"north\"|\"east\"|\"south\"|\"west\", \"width\": number}], "
+    "\"notes\": string}. "
+    "Preserve existing rooms, adjacencies, and doors unless the user revises them. "
+    "Parse dimensions written as 12x10, 12 by 10, or similar as width and depth. "
+    "Interpret arrows, ordered lists, 'in sequence', 'connected', 'connect A & B', adjacency, and door statements as layout intent. "
+    "For sequences such as A -> B -> C, create adjacencies A-B and B-C. "
+    "For door statements between named rooms, create one interior door per connected room pair. "
+    "Use plausible wall values when the user does not specify a wall, preferring east/west for left-to-right sequences. "
+    "Do not invent extra rooms. Do not include markdown."
+)
+
 GENERATE_PNG_TOOL_DESCRIPTION = "Generate a rendered PNG from the current SketchUp viewport and user prompt."
 
 GENERATE_POINT_CLOUD_TOOL_DESCRIPTION = "Convert the generated PNG into a color point cloud using Depth Anything V2."
@@ -159,6 +175,20 @@ def compose_intent_classifier_user_message(request: AgentOrchestrateRequest) -> 
                 if request.temporary_floor_plan_draft
                 else None
             ),
+        }
+    )
+
+
+def compose_floor_plan_draft_user_message(existing_draft: dict | None, user_prompt: str) -> str:
+    return json.dumps(
+        {
+            "existing_floor_plan_draft": existing_draft,
+            "user_prompt": user_prompt,
+            "required_readiness_fields": [
+                "rooms with names and approximate dimensions",
+                "adjacencies or layout intent when more than one room exists",
+                "doors or openings",
+            ],
         }
     )
 

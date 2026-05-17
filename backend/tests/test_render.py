@@ -195,10 +195,15 @@ def test_edit_image_openai_writes_returned_image(monkeypatch, tmp_path) -> None:
     assert output_dir.joinpath(body["output_image_path"].split("/")[-1]).read_bytes() == b"edited image"
 
 
-def test_generate_point_cloud_endpoint_calls_depth_service(monkeypatch) -> None:
+def test_generate_point_cloud_endpoint_calls_depth_service(monkeypatch, tmp_path) -> None:
+    output_dir = tmp_path / "outputs"
+    output_dir.mkdir()
+    output_dir.joinpath("render.png").write_bytes(b"render image")
+    monkeypatch.setenv("OUTPUT_DIR", str(output_dir))
+
     def fake_post(*args, **kwargs):
         assert args[0] == "http://depth-service:8001/depth/point-cloud"
-        assert kwargs["json"]["image_path"] == "/app/outputs/render.png"
+        assert kwargs["json"]["image_path"] == str(output_dir / "render.png")
         return httpx.Response(
             200,
             json={
@@ -218,6 +223,42 @@ def test_generate_point_cloud_endpoint_calls_depth_service(monkeypatch) -> None:
     client = TestClient(app)
 
     response = client.post("/generate/point-cloud", json={"image_path": "/app/outputs/render.png"})
+
+    assert response.status_code == 200
+    assert response.json()["pointcloud_path"].endswith(".ply")
+
+
+def test_generate_point_cloud_endpoint_resolves_uploaded_viewport_filename(monkeypatch, tmp_path) -> None:
+    export_dir = tmp_path / "exports"
+    output_dir = tmp_path / "outputs"
+    export_dir.mkdir()
+    output_dir.mkdir()
+    export_dir.joinpath("viewport_test.png").write_bytes(b"viewport image")
+    monkeypatch.setenv("EXPORT_DIR", str(export_dir))
+    monkeypatch.setenv("OUTPUT_DIR", str(output_dir))
+
+    def fake_post(*args, **kwargs):
+        assert args[0] == "http://depth-service:8001/depth/point-cloud"
+        assert kwargs["json"]["image_path"] == str(export_dir / "viewport_test.png")
+        return httpx.Response(
+            200,
+            json={
+                "status": "success",
+                "artifact_id": "pointcloud_test",
+                "pointcloud_path": "/app/pointclouds/pointcloud_test.ply",
+                "preview_image_path": "/app/pointclouds/pointcloud_test_depth_preview.png",
+                "output_format": "ply",
+                "point_count": 10,
+                "depth_model": "depth-anything-v2-metric-indoor-small",
+                "warnings": [],
+                "error_message": None,
+            },
+        )
+
+    monkeypatch.setattr("point_cloud_tool.httpx.post", fake_post)
+    client = TestClient(app)
+
+    response = client.post("/generate/point-cloud", json={"image_path": "viewport_test.png"})
 
     assert response.status_code == 200
     assert response.json()["pointcloud_path"].endswith(".ply")

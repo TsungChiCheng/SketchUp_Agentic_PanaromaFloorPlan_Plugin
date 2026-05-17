@@ -211,10 +211,10 @@ Default output is colored PLY plus a depth preview PNG. PLY is chosen as the ope
 The dedicated depth service owns model runtime dependencies. Its default model setting is:
 
 ```env
-DEPTH_MODEL=depth-anything-v2-metric-indoor-small
+DEPTH_MODEL=depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf
 ```
 
-Current implementation provides deterministic fallback depth for local tests. Production-quality depth should replace the fallback with Depth Anything V2 metric inference behind the same service endpoint.
+Current implementation uses the configured Depth Anything V2 metric model behind the same service endpoint. Tests mock depth output so CI does not require GPU or model weights.
 
 ## Acceptance Criteria
 

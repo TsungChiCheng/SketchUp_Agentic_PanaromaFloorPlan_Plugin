@@ -10,10 +10,10 @@ require_relative "style_presets"
 
 module Architech
   module AIRenderer
-    PLUGIN_ROOT = File.expand_path("..", __dir__)
-    REPO_ROOT = File.expand_path("..", PLUGIN_ROOT)
+    PLUGIN_ROOT = __dir__
+    REPO_ROOT = File.expand_path("../..", PLUGIN_ROOT)
     DIALOG_PATH = File.join(__dir__, "dialog.html")
-    UI_VERSION = "2026-05-16-floorplan-direct-v7"
+    UI_VERSION = "2026-05-17-panorama-point-cloud-v1"
 
     class << self
       def show_dialog

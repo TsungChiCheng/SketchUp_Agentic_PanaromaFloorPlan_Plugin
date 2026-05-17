@@ -590,10 +590,11 @@
           const choices = document.createElement("div");
           choices.className = "choice-row";
           panoramaPaths.forEach((path, index) => {
-            choices.appendChild(choiceButton(`Select Option ${index + 1}`, () => {
+            choices.appendChild(choiceButton(`Select ${index + 1} and Convert point cloud`, () => {
               payload.selected_panorama_image_path = path;
               payload.selected_panorama_index = index + 1;
-              appendMessage("agent", `Selected panorama option ${index + 1}.`);
+              appendMessage("agent", `Selected panorama option ${index + 1}. Converting it to a point cloud.`);
+              generatePointCloud({ output_image_path: path });
             }));
           });
           message.appendChild(choices);

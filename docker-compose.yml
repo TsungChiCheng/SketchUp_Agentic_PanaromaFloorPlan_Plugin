@@ -64,7 +64,7 @@ services:
       EXPORT_DIR: /app/exports
       OUTPUT_DIR: /app/outputs
       POINTCLOUD_DIR: /app/pointclouds
-      DEPTH_MODEL: "${DEPTH_MODEL:-depth-anything-v2-metric-indoor-small}"
+      DEPTH_MODEL: "${DEPTH_MODEL:-depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf}"
       LOG_LEVEL: "${DEPTH_SERVICE_LOG_LEVEL:-info}"
     volumes:
       - ./depth_service:/app

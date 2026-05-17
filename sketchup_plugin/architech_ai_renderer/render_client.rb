@@ -126,8 +126,8 @@ module Architech
       def self.dotenv_paths
         [
           ENV["ARCHITECH_RENDER_ENV_PATH"],
-          File.join(AIRenderer::REPO_ROOT, ".env"),
           File.join(AIRenderer::PLUGIN_ROOT, ".env"),
+          File.join(AIRenderer::REPO_ROOT, ".env"),
           File.expand_path("~/Desktop/sketchup_plugin/.env"),
           File.expand_path("~/Desktop/architech/.env")
         ].compact.uniq

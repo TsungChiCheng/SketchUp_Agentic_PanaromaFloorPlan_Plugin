@@ -3,6 +3,7 @@ import math
 import os
 from pathlib import Path
 import struct
+from functools import lru_cache
 from uuid import uuid4
 
 from PIL import Image, ImageOps
@@ -11,12 +12,68 @@ from schemas import PointCloudRequest, PointCloudResponse
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf"
 Point = tuple[float, float, float, int, int, int]
 PointGrid = list[list[Point]]
 
 
 class PointCloudError(RuntimeError):
     pass
+
+
+class DepthModelRuntime:
+    def __init__(self, model_name: str, device: str | None = None) -> None:
+        self.model_name = model_name
+        self.device = device or os.getenv("DEPTH_DEVICE", "auto")
+        try:
+            import torch
+            from transformers import AutoImageProcessor, AutoModelForDepthEstimation
+        except Exception as exc:
+            raise PointCloudError(
+                "Depth model dependencies are not installed. Rebuild the depth-service image with "
+                "torch and transformers dependencies."
+            ) from exc
+
+        self.torch = torch
+        self.device = self.resolve_device(torch, self.device)
+        try:
+            self.processor = AutoImageProcessor.from_pretrained(model_name, use_fast=False)
+            self.model = AutoModelForDepthEstimation.from_pretrained(model_name)
+            self.model.to(self.device)
+            self.model.eval()
+        except Exception as exc:
+            raise PointCloudError(f"Depth model could not be loaded: {model_name}. {exc}") from exc
+
+    @staticmethod
+    def resolve_device(torch_module, configured: str) -> str:
+        if configured == "auto":
+            return "cuda" if torch_module.cuda.is_available() else "cpu"
+        if configured == "cuda" and not torch_module.cuda.is_available():
+            raise PointCloudError("DEPTH_DEVICE=cuda was requested, but CUDA is not available.")
+        return configured
+
+    def estimate(self, image: Image.Image) -> Image.Image:
+        try:
+            inputs = self.processor(images=image, return_tensors="pt")
+            inputs = {key: value.to(self.device) for key, value in inputs.items()}
+            with self.torch.no_grad():
+                outputs = self.model(**inputs)
+            predicted_depth = outputs.predicted_depth
+            prediction = self.torch.nn.functional.interpolate(
+                predicted_depth.unsqueeze(1),
+                size=image.size[::-1],
+                mode="bicubic",
+                align_corners=False,
+            ).squeeze()
+            depth = prediction.detach().cpu().float()
+        except Exception as exc:
+            raise PointCloudError(f"Depth model inference failed: {exc}") from exc
+        return tensor_to_depth_image(depth)
+
+
+@lru_cache(maxsize=1)
+def get_depth_runtime() -> DepthModelRuntime:
+    return DepthModelRuntime(os.getenv("DEPTH_MODEL", DEFAULT_DEPTH_MODEL))
 
 
 def generate_point_cloud(request: PointCloudRequest) -> PointCloudResponse:
@@ -42,10 +99,8 @@ def generate_point_cloud(request: PointCloudRequest) -> PointCloudResponse:
         preview_image_path=str(preview_path),
         output_format=request.output_format,
         point_count=len(points),
-        depth_model=os.getenv("DEPTH_MODEL", "depth-anything-v2-metric-indoor-small"),
-        warnings=[
-            "Depth Anything V2 runtime is represented by deterministic fallback depth unless model weights are installed."
-        ],
+        depth_model=os.getenv("DEPTH_MODEL", DEFAULT_DEPTH_MODEL),
+        warnings=[],
     )
 
 
@@ -76,16 +131,26 @@ def create_artifact_id() -> str:
 
 
 def estimate_depth(image: Image.Image) -> Image.Image:
-    gray = ImageOps.grayscale(image)
-    width, height = gray.size
-    pixels = gray.load()
-    depth = Image.new("L", (width, height))
-    out = depth.load()
-    for y in range(height):
-        vertical_bias = int(80 * (y / max(height - 1, 1)))
-        for x in range(width):
-            out[x, y] = max(0, min(255, 255 - pixels[x, y] + vertical_bias))
-    return depth
+    return get_depth_runtime().estimate(image)
+
+
+def tensor_to_depth_image(depth) -> Image.Image:
+    try:
+        import numpy as np
+    except Exception as exc:
+        raise PointCloudError("Depth image normalization requires numpy.") from exc
+
+    values = depth.numpy()
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        raise PointCloudError("Depth model returned no finite depth values.")
+    min_value = float(finite.min())
+    max_value = float(finite.max())
+    if math.isclose(min_value, max_value):
+        normalized = np.zeros_like(values, dtype=np.uint8)
+    else:
+        normalized = ((values - min_value) / (max_value - min_value) * 255.0).clip(0, 255).astype(np.uint8)
+    return Image.fromarray(normalized, mode="L")
 
 
 def rgbd_to_point_grid(image: Image.Image, depth: Image.Image, fov_degrees: float) -> PointGrid:

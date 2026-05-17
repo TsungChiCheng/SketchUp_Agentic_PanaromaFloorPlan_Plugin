@@ -75,14 +75,14 @@ If Scan Essentials does not expose a concrete Ruby API, `import_point_cloud` rep
 
 ## Depth Anything V2 Integration Point
 
-The depth service currently uses deterministic fallback depth. Replace `estimate_depth()` in `depth_service/service.py` with Depth Anything V2 metric model inference while preserving:
+The depth service uses Depth Anything V2 metric model inference through `estimate_depth()` in `depth_service/service.py` while preserving:
 
 - input image path validation
 - output OBJ/PLY/LAS writing
 - coordinate convention: `x` is image horizontal, `y` is max-depth-shifted estimated depth (`max_depth - depth`), and `z` is image vertical/up shifted so the minimum Z is 0
 - preview generation
 - response schema
-- tests using mocked or fixture depth output
+- tests using mocked or fixture depth output so CI does not need GPU or model weights
 
 ## Test Commands
 

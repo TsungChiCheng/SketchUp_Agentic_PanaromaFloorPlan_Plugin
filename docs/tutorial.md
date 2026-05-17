@@ -10,7 +10,7 @@ Before starting, make sure the backend and depth service are running, the Sketch
 http://127.0.0.1:8000
 ```
 
-If the backend runs on another machine, set `ARCHITECH_RENDER_BACKEND_URL` to that machine's backend URL before opening the extension.
+If the backend runs on another machine, set `PANORAMA_FLOORPLAN_RENDER_BACKEND_URL` to that machine's backend URL before opening the extension.
 
 ## 1. Open the AI Render Assistant
 

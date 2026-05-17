@@ -43,7 +43,7 @@ from schemas import (
 from settings import get_settings
 
 app = FastAPI(
-    title="Architech AI Render Assistant API",
+    title="PanoramaFloorPlan AI Render Assistant API",
     version="0.1.0",
 )
 

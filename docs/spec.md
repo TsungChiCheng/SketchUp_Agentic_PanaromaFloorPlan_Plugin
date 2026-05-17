@@ -1,8 +1,8 @@
-# Architech Agentic Render Pipeline — Specification
+# PanoramaFloorPlan Agentic Render Pipeline — Specification
 
 ## Overview
 
-Architech connects SketchUp to a local agentic rendering backend. The backend can generate a PNG render from the current SketchUp viewport, convert a flat PNG into a colored point cloud using a Depth Anything V2-compatible service, and orchestrate both steps through a LangChain/OpenAI tool-calling agent with deterministic fallback orchestration.
+PanoramaFloorPlan connects SketchUp to a local agentic rendering backend. The backend can generate a PNG render from the current SketchUp viewport, convert a flat PNG into a colored point cloud using a Depth Anything V2-compatible service, and orchestrate both steps through a LangChain/OpenAI tool-calling agent with deterministic fallback orchestration.
 It can also discuss floor-plan requirements, accumulate a structured floor-plan draft, and run LLM-supported floor-plan tools that decorate the layout as JSON and draw the final SVG with a PNG compatibility artifact.
 
 ## Goals
@@ -182,7 +182,7 @@ After artifact generation, the dialog asks the user whether to import the PNG. F
 
 The tools are structured so they can later be exposed through an MCP server without changing the endpoint contracts.
 
-Panorama generation is documented as a direct backend-tool flow in `docs/panorama-flow.svg`. It is enabled by the SketchUp plugin only when a plotted floor-plan decoration JSON path is available, calls `/generate/panorama` directly, and stays outside `/agent/orchestrate`.
+Panorama generation is a direct backend-tool flow. It is enabled by the SketchUp plugin only when a plotted floor-plan decoration JSON path is available, calls `/generate/panorama` directly, and stays outside `/agent/orchestrate`.
 
 ## Floor-Plan Workflow
 

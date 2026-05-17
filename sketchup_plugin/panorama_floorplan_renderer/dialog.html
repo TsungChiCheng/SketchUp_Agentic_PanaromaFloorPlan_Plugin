@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Architech Agent</title>
+    <title>PanoramaFloorPlan Agent</title>
     <style>
       :root {
         color-scheme: light;
@@ -252,14 +252,14 @@
   <body>
     <main>
       <header>
-        <h1>Architech Agent</h1>
+        <h1>PanoramaFloorPlan Agent</h1>
         <div id="status" class="status">Ready.</div>
       </header>
 
       <section id="thread" class="thread" aria-live="polite"></section>
 
       <section class="composer">
-        <textarea id="prompt" placeholder="Ask Architech to render this view and create a point cloud..."></textarea>
+        <textarea id="prompt" placeholder="Ask PanoramaFloorPlan to render this view and create a point cloud..."></textarea>
         <div class="composer-meta">
           <select id="style"></select>
           <div class="composer-actions">
@@ -287,6 +287,7 @@
       let lastPointCloud = null;
       let lastFloorPlan = null;
       let lastPanorama = null;
+      let pendingPointCloudContext = null;
       let backendUrl = "";
       let temporaryTextToImagePrompt = "";
       let temporaryFloorPlanDraft = null;
@@ -594,7 +595,15 @@
               payload.selected_panorama_image_path = path;
               payload.selected_panorama_index = index + 1;
               appendMessage("agent", `Selected panorama option ${index + 1}. Converting it to a point cloud.`);
-              generatePointCloud({ output_image_path: path });
+              generatePointCloud(
+                { output_image_path: path },
+                {
+                  sourceType: "panorama",
+                  sourceLabel: `Panorama option ${index + 1}`,
+                  sourceImagePath: path,
+                  sourcePreviewUrl: previewUrls[index] || payload.panorama_preview_url || ""
+                }
+              );
             }));
           });
           message.appendChild(choices);
@@ -799,7 +808,7 @@
         sketchup.reveal_point_cloud(JSON.stringify({ pointcloud_path: pointcloudPath }));
       }
 
-      function generatePointCloud(png) {
+      function generatePointCloud(png, options = {}) {
         const outputImagePath = png.output_image_path;
         if (!outputImagePath) {
           appendMessage("agent", "I do not have a PNG artifact to convert.");
@@ -809,9 +818,16 @@
         setRunning(true);
         setStatus("Estimating depth...");
         pendingMessage = appendMessage("agent", "Estimating depth and generating a PLY point cloud...", "pending");
+        pendingPointCloudContext = {
+          sourceType: options.sourceType || "image",
+          sourceLabel: options.sourceLabel || "Source image",
+          sourceImagePath: options.sourceImagePath || outputImagePath,
+          sourcePreviewUrl: options.sourcePreviewUrl || png.render_preview_url || ""
+        };
         try {
           sketchup.generate_point_cloud(JSON.stringify({ output_image_path: outputImagePath, output_format: "ply" }));
         } catch (error) {
+          pendingPointCloudContext = null;
           removePendingMessage();
           setRunning(false);
           setStatus("Point-cloud routing failed.");
@@ -1005,7 +1021,7 @@
           delete backendPayload.view;
           const response = await postBackend("/agent/orchestrate", backendPayload);
           const hydrated = await hydrateDirectOrchestrateResult(response);
-          window.ArchitechRenderer.receiveOrchestrateResult(hydrated);
+          window.PanoramaFloorPlanRenderer.receiveOrchestrateResult(hydrated);
         } catch (error) {
           removePendingMessage();
           setRunning(false);
@@ -1092,7 +1108,7 @@
         return `data:${mimeType};base64,${artifact.content_base64}`;
       }
 
-      window.ArchitechRenderer = {
+      window.PanoramaFloorPlanRenderer = {
         receiveInitialState(payload) {
           backendUrl = payload.backend_url || "";
           pointCloudImportCapability = payload.point_cloud_import || pointCloudImportCapability;
@@ -1150,6 +1166,8 @@
           setResult(payload);
         },
         receivePointCloudResult(payload) {
+          const pointCloudContext = pendingPointCloudContext;
+          pendingPointCloudContext = null;
           setRunning(false);
           removePendingMessage();
           setStatus(payload.status === "success" ? "Point cloud complete." : "Point cloud failed.");
@@ -1163,7 +1181,8 @@
             artifacts.className = "artifact-grid";
             artifacts.append(
               artifactCard("Point Cloud", payload.pointcloud_path || payload.local_pointcloud_path),
-              artifactCard("Depth Model", payload.depth_model)
+              artifactCard("Depth Model", payload.depth_model),
+              artifactCard("Source", pointCloudContext ? pointCloudContext.sourceLabel : "Image")
             );
             message.appendChild(artifacts);
             appendPointCloudImportNote(message, payload);
@@ -1171,11 +1190,39 @@
             choices.className = "choice-row";
             appendPointCloudChoices(choices, payload);
             message.appendChild(choices);
-            const depthPreview = previewImage(payload.pointcloud_preview_url, "Generated depth preview");
-            if (depthPreview) {
+            const depthPreviewUrl = payload.pointcloud_preview_url || "";
+            const depthPreviewPath = payload.local_preview_image_path || payload.preview_image_path || "";
+            const depthPreview = previewImage(depthPreviewUrl, "Generated depth preview", {
+              clickable: Boolean(depthPreviewUrl || depthPreviewPath),
+              title: "Open depth preview in a larger window",
+              onClick: () => openImageViewer({
+                image_url: depthPreviewUrl,
+                image_path: depthPreviewPath,
+                title: pointCloudContext && pointCloudContext.sourceType === "panorama"
+                  ? `${pointCloudContext.sourceLabel} Depth Preview`
+                  : "Depth Preview"
+              })
+            });
+            const sourcePreview = pointCloudContext && pointCloudContext.sourcePreviewUrl
+              ? previewImage(pointCloudContext.sourcePreviewUrl, `${pointCloudContext.sourceLabel} preview`, {
+                clickable: true,
+                title: `Open ${pointCloudContext.sourceLabel} in a larger window`,
+                onClick: () => openImageViewer({
+                  image_url: pointCloudContext.sourcePreviewUrl,
+                  image_path: pointCloudContext.sourceImagePath || "",
+                  title: pointCloudContext.sourceLabel
+                })
+              })
+              : null;
+            if (pointCloudContext && pointCloudContext.sourceType === "panorama") {
+              if (sourcePreview) sourcePreview.classList.add("panorama-preview");
+              if (depthPreview) depthPreview.classList.add("panorama-preview");
+            }
+            if (sourcePreview || depthPreview) {
               const previews = document.createElement("div");
               previews.className = "preview-grid";
-              previews.appendChild(depthPreview);
+              if (sourcePreview) previews.appendChild(sourcePreview);
+              if (depthPreview) previews.appendChild(depthPreview);
               message.appendChild(previews);
             }
             thread.appendChild(message);

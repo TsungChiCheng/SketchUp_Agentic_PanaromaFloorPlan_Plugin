@@ -1,4 +1,5 @@
-FROM python:3.11-slim-bullseye
+ARG PYTORCH_IMAGE=pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+FROM ${PYTORCH_IMAGE}
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -14,7 +15,7 @@ RUN python -c "from transformers import AutoImageProcessor, AutoModelForDepthEst
 
 COPY . .
 
-RUN useradd --create-home --shell /bin/bash app && chown -R app:app /app /opt/huggingface
+RUN mkdir -p /opt/huggingface && useradd --create-home --shell /bin/bash app && chown -R app:app /app /opt/huggingface
 USER app
 
 EXPOSE 8001

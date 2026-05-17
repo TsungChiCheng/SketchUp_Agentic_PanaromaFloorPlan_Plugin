@@ -8,7 +8,7 @@ require_relative "metadata_collector"
 require_relative "render_client"
 require_relative "style_presets"
 
-module Architech
+module PanoramaFloorPlan
   module AIRenderer
     PLUGIN_ROOT = __dir__
     REPO_ROOT = File.expand_path("../..", PLUGIN_ROOT)
@@ -84,7 +84,7 @@ module Architech
       def dialog
         @dialog ||= UI::HtmlDialog.new(
           dialog_title: "AI Render Assistant",
-          preferences_key: "architech_ai_render_assistant",
+          preferences_key: "panorama_floorplan_ai_render_assistant",
           scrollable: true,
           resizable: true,
           width: 560,
@@ -98,7 +98,7 @@ module Architech
       def floor_plan_viewer_dialog
         @floor_plan_viewer_dialog ||= UI::HtmlDialog.new(
           dialog_title: "Floor Plan",
-          preferences_key: "architech_floor_plan_viewer",
+          preferences_key: "panorama_floorplan_floor_plan_viewer",
           scrollable: true,
           resizable: true,
           width: 980,
@@ -112,7 +112,7 @@ module Architech
       def image_viewer_dialog
         @image_viewer_dialog ||= UI::HtmlDialog.new(
           dialog_title: "Image Preview",
-          preferences_key: "architech_image_viewer",
+          preferences_key: "panorama_floorplan_image_viewer",
           scrollable: true,
           resizable: true,
           width: 980,
@@ -131,18 +131,18 @@ module Architech
           point_cloud_import: point_cloud_import_capability
         }
         debug_log("initial state backend_url=#{payload[:backend_url]}")
-        execute_js("window.ArchitechRenderer.receiveInitialState(#{JSON.generate(payload)})")
+        execute_js("window.PanoramaFloorPlanRenderer.receiveInitialState(#{JSON.generate(payload)})")
       end
 
       def handle_health_check
-        start_background_job(:health_check, "window.ArchitechRenderer.receiveHealth") do
+        start_background_job(:health_check, "window.PanoramaFloorPlanRenderer.receiveHealth") do
           RenderClient.new.health
         end
       end
 
       def dialog_html
         html = File.read(DIALOG_PATH, mode: "rb")
-        html.sub("</body>", "<!-- Architech UI #{UI_VERSION} loaded #{Time.now.utc.iso8601} --></body>")
+        html.sub("</body>", "<!-- PanoramaFloorPlan UI #{UI_VERSION} loaded #{Time.now.utc.iso8601} --></body>")
       end
 
       def handle_submit_render(payload)
@@ -150,7 +150,7 @@ module Architech
         export_path = Exporter.export_viewport(options.fetch("view", {}))
         metadata = MetadataCollector.collect
 
-        start_background_job(:submit_render, "window.ArchitechRenderer.receiveRenderResult") do
+        start_background_job(:submit_render, "window.PanoramaFloorPlanRenderer.receiveRenderResult") do
           client = RenderClient.new
           uploaded = client.upload_viewport(export_path)
           request = build_render_request(options, uploaded.fetch("image_path"), metadata)
@@ -163,7 +163,7 @@ module Architech
           result
         end
       rescue StandardError => e
-        execute_js("window.ArchitechRenderer.receiveRenderResult(#{JSON.generate(error_payload(e))})")
+        execute_js("window.PanoramaFloorPlanRenderer.receiveRenderResult(#{JSON.generate(error_payload(e))})")
       end
 
       def handle_import_render(payload)
@@ -178,9 +178,9 @@ module Architech
         image = model.entities.add_image(path, ORIGIN, width)
         model.selection.clear
         model.selection.add(image)
-        execute_js("window.ArchitechRenderer.receiveImportResult(#{JSON.generate({ status: "success", imported_image_path: path })})")
+        execute_js("window.PanoramaFloorPlanRenderer.receiveImportResult(#{JSON.generate({ status: "success", imported_image_path: path })})")
       rescue StandardError => e
-        execute_js("window.ArchitechRenderer.receiveImportResult(#{JSON.generate(error_payload(e))})")
+        execute_js("window.PanoramaFloorPlanRenderer.receiveImportResult(#{JSON.generate(error_payload(e))})")
       end
 
       def handle_import_point_cloud(payload)
@@ -201,9 +201,9 @@ module Architech
 
         raise point_cloud_import_error(path) unless imported
 
-        execute_js("window.ArchitechRenderer.receivePointCloudImportResult(#{JSON.generate({ status: "success", imported_pointcloud_path: path })})")
+        execute_js("window.PanoramaFloorPlanRenderer.receivePointCloudImportResult(#{JSON.generate({ status: "success", imported_pointcloud_path: path })})")
       rescue StandardError => e
-        execute_js("window.ArchitechRenderer.receivePointCloudImportResult(#{JSON.generate(error_payload(e))})")
+        execute_js("window.PanoramaFloorPlanRenderer.receivePointCloudImportResult(#{JSON.generate(error_payload(e))})")
       end
 
       def handle_reveal_point_cloud(payload)
@@ -215,9 +215,9 @@ module Architech
 
         raise "Could not reveal point-cloud file: #{path}" unless revealed
 
-        execute_js("window.ArchitechRenderer.receivePointCloudRevealResult(#{JSON.generate({ status: "success", revealed_pointcloud_path: path })})")
+        execute_js("window.PanoramaFloorPlanRenderer.receivePointCloudRevealResult(#{JSON.generate({ status: "success", revealed_pointcloud_path: path })})")
       rescue StandardError => e
-        execute_js("window.ArchitechRenderer.receivePointCloudRevealResult(#{JSON.generate(error_payload(e))})")
+        execute_js("window.PanoramaFloorPlanRenderer.receivePointCloudRevealResult(#{JSON.generate(error_payload(e))})")
       end
 
       def handle_generate_point_cloud(payload)
@@ -227,7 +227,7 @@ module Architech
         raise "Rendered image not found: #{local_image_path}" unless File.exist?(local_image_path)
         metadata = MetadataCollector.collect
 
-        start_background_job(:generate_point_cloud, "window.ArchitechRenderer.receivePointCloudResult") do
+        start_background_job(:generate_point_cloud, "window.PanoramaFloorPlanRenderer.receivePointCloudResult") do
           result = RenderClient.new.point_cloud(
             image_path: output_image_path,
             camera: metadata.fetch(:camera),
@@ -240,7 +240,7 @@ module Architech
           result
         end
       rescue StandardError => e
-        execute_js("window.ArchitechRenderer.receivePointCloudResult(#{JSON.generate(error_payload(e))})")
+        execute_js("window.PanoramaFloorPlanRenderer.receivePointCloudResult(#{JSON.generate(error_payload(e))})")
       end
 
       def handle_edit_image(payload)
@@ -249,7 +249,7 @@ module Architech
         local_image_path = ensure_local_output_artifact(output_image_path)
         raise "Rendered image not found: #{local_image_path}" unless File.exist?(local_image_path)
 
-        start_background_job(:edit_image, "window.ArchitechRenderer.receiveEditImageResult") do
+        start_background_job(:edit_image, "window.PanoramaFloorPlanRenderer.receiveEditImageResult") do
           result = RenderClient.new.edit_image(
             image_path: output_image_path,
             prompt: data.fetch("prompt"),
@@ -260,7 +260,7 @@ module Architech
           result
         end
       rescue StandardError => e
-        execute_js("window.ArchitechRenderer.receiveEditImageResult(#{JSON.generate(error_payload(e))})")
+        execute_js("window.PanoramaFloorPlanRenderer.receiveEditImageResult(#{JSON.generate(error_payload(e))})")
       end
 
       def handle_plot_floor_plan(payload)
@@ -270,7 +270,7 @@ module Architech
         room_count = draft.fetch("rooms", []).length
         debug_log("plot_floor_plan draft rooms=#{room_count}")
 
-        start_background_job(:plot_floor_plan, "window.ArchitechRenderer.receiveFloorPlanResult") do
+        start_background_job(:plot_floor_plan, "window.PanoramaFloorPlanRenderer.receiveFloorPlanResult") do
           debug_log("plot_floor_plan worker started")
           client = RenderClient.new
           debug_log("calling /generate/floor-plan")
@@ -285,7 +285,7 @@ module Architech
         end
       rescue StandardError => e
         debug_log("plot_floor_plan failed: #{e.class}: #{e.message}")
-        execute_js("window.ArchitechRenderer.receiveFloorPlanResult(#{JSON.generate(error_payload(e))})")
+        execute_js("window.PanoramaFloorPlanRenderer.receiveFloorPlanResult(#{JSON.generate(error_payload(e))})")
       end
 
       def handle_open_floor_plan_viewer(payload)
@@ -306,7 +306,7 @@ module Architech
         show_floor_plan_viewer(title, svg_url)
       rescue StandardError => e
         debug_log("open_floor_plan_viewer failed: #{e.class}: #{e.message}")
-        execute_js("window.ArchitechRenderer.receiveFloorPlanViewerResult(#{JSON.generate(error_payload(e))})")
+        execute_js("window.PanoramaFloorPlanRenderer.receiveFloorPlanViewerResult(#{JSON.generate(error_payload(e))})")
       end
 
       def handle_open_image_viewer(payload)
@@ -327,7 +327,7 @@ module Architech
         show_image_viewer(title, image_url)
       rescue StandardError => e
         debug_log("open_image_viewer failed: #{e.class}: #{e.message}")
-        execute_js("window.ArchitechRenderer.receiveImageViewerResult(#{JSON.generate(error_payload(e))})")
+        execute_js("window.PanoramaFloorPlanRenderer.receiveImageViewerResult(#{JSON.generate(error_payload(e))})")
       end
 
       def handle_generate_room_renders(payload)
@@ -335,7 +335,7 @@ module Architech
         decoration_path = data.fetch("decoration_path")
         style = data.fetch("style", StylePresets.default)
 
-        start_background_job(:generate_room_renders, "window.ArchitechRenderer.receiveRoomRenderResult") do
+        start_background_job(:generate_room_renders, "window.PanoramaFloorPlanRenderer.receiveRoomRenderResult") do
           client = RenderClient.new
           result = client.room_renders(
             decoration_path: decoration_path,
@@ -346,7 +346,7 @@ module Architech
           result
         end
       rescue StandardError => e
-        execute_js("window.ArchitechRenderer.receiveRoomRenderResult(#{JSON.generate(error_payload(e))})")
+        execute_js("window.PanoramaFloorPlanRenderer.receiveRoomRenderResult(#{JSON.generate(error_payload(e))})")
       end
 
       def handle_run_agent(payload)
@@ -354,7 +354,7 @@ module Architech
         export_path = Exporter.export_viewport(options.fetch("view", {}))
         metadata = MetadataCollector.collect
 
-        start_background_job(:run_agent, "window.ArchitechRenderer.receiveAgentResult") do
+        start_background_job(:run_agent, "window.PanoramaFloorPlanRenderer.receiveAgentResult") do
           client = RenderClient.new
           uploaded = client.upload_viewport(export_path)
           request = build_render_request(options, uploaded.fetch("image_path"), metadata)
@@ -375,7 +375,7 @@ module Architech
           result
         end
       rescue StandardError => e
-        execute_js("window.ArchitechRenderer.receiveAgentResult(#{JSON.generate(error_payload(e))})")
+        execute_js("window.PanoramaFloorPlanRenderer.receiveAgentResult(#{JSON.generate(error_payload(e))})")
       end
 
       def handle_orchestrate_agent(payload)
@@ -383,7 +383,7 @@ module Architech
         options = JSON.parse(payload)
 
         if floor_plan_orchestration?(options)
-          start_async_job(:orchestrate_agent, "window.ArchitechRenderer.receiveOrchestrateResult") do
+          start_async_job(:orchestrate_agent, "window.PanoramaFloorPlanRenderer.receiveOrchestrateResult") do
             run_orchestrate_request_without_viewport(options)
           end
         else
@@ -397,29 +397,29 @@ module Architech
           if windows_platform?
             start_external_orchestrate_job(options, export_path, metadata)
           else
-            start_async_job(:orchestrate_agent, "window.ArchitechRenderer.receiveOrchestrateResult") do
+            start_async_job(:orchestrate_agent, "window.PanoramaFloorPlanRenderer.receiveOrchestrateResult") do
               run_orchestrate_request(options, export_path, metadata)
             end
           end
         end
       rescue StandardError => e
         debug_log("orchestrate failed: #{e.class}: #{e.message}")
-        execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(error_payload(e))})")
+        execute_js("window.PanoramaFloorPlanRenderer.receiveOrchestrateResult(#{JSON.generate(error_payload(e))})")
       end
 
       def handle_floor_plan_orchestrate_agent(payload)
         debug_log("floor-plan orchestrate callback received")
         options = JSON.parse(payload)
-        start_async_job(:orchestrate_floor_plan, "window.ArchitechRenderer.receiveOrchestrateResult") do
+        start_async_job(:orchestrate_floor_plan, "window.PanoramaFloorPlanRenderer.receiveOrchestrateResult") do
           run_orchestrate_request_without_viewport(options)
         end
       rescue StandardError => e
         debug_log("floor-plan orchestrate failed: #{e.class}: #{e.message}")
-        execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(error_payload(e))})")
+        execute_js("window.PanoramaFloorPlanRenderer.receiveOrchestrateResult(#{JSON.generate(error_payload(e))})")
       end
 
       def start_external_orchestrate_job(options, export_path, metadata)
-        job_dir = Dir.mktmpdir("architech_orchestrate_")
+        job_dir = Dir.mktmpdir("panorama_floorplan_orchestrate_")
         job_path = File.join(job_dir, "job.json")
         script_path = File.join(job_dir, "orchestrate.ps1")
         result_path = File.join(job_dir, "result.json")
@@ -467,14 +467,14 @@ module Architech
           if path
             payload = JSON.parse(read_json_file(path))
             debug_log("external orchestrate worker returned status=#{payload["status"]}")
-            execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(payload)})")
+            execute_js("window.PanoramaFloorPlanRenderer.receiveOrchestrateResult(#{JSON.generate(payload)})")
           else
             poll_external_orchestrate_result(result_path, error_path)
           end
         end
       rescue StandardError => e
         debug_log("external orchestrate polling failed: #{e.class}: #{e.message}")
-        execute_js("window.ArchitechRenderer.receiveOrchestrateResult(#{JSON.generate(error_payload(e))})")
+        execute_js("window.PanoramaFloorPlanRenderer.receiveOrchestrateResult(#{JSON.generate(error_payload(e))})")
       end
 
       def external_orchestrate_script
@@ -730,7 +730,7 @@ module Architech
       end
 
       def debug_log(message)
-        puts("[Architech AI Renderer] #{Time.now.utc.iso8601} #{message}")
+        puts("[PanoramaFloorPlan AI Renderer] #{Time.now.utc.iso8601} #{message}")
       rescue StandardError
         nil
       end
@@ -1020,13 +1020,13 @@ module Architech
       end
 
       def local_project_root
-        configured = ENV["ARCHITECH_LOCAL_PROJECT_DIR"]
+        configured = ENV["PANORAMA_FLOORPLAN_LOCAL_PROJECT_DIR"]
         return File.expand_path(configured) if configured && !configured.empty?
 
         sketchup_plugin = File.expand_path("~/Desktop/sketchup_plugin")
         return sketchup_plugin if Dir.exist?(sketchup_plugin)
 
-        File.expand_path("~/Desktop/architech")
+        File.expand_path("~/Desktop/panorama_floorplan")
       end
 
       def local_file_url(path)

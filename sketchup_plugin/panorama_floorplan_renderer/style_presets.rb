@@ -1,4 +1,4 @@
-module Architech
+module PanoramaFloorPlan
   module AIRenderer
     module StylePresets
       PRESETS = [

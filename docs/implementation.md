@@ -1,4 +1,4 @@
-# Architech Agentic Render Pipeline — Implementation Notes
+# PanoramaFloorPlan Agentic Render Pipeline — Implementation Notes
 
 ## Completed Architecture
 

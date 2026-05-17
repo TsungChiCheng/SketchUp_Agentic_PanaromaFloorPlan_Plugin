@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1180" height="720" viewBox="0 0 1180 720" role="img" aria-labelledby="title desc">
-  <title id="title">Architech Panorama Tool Flow</title>
+  <title id="title">PanoramaFloorPlan Panorama Tool Flow</title>
   <desc id="desc">Flow diagram showing panorama generation as a direct backend tool enabled only when the SketchUp plugin has a plotted floor-plan decoration JSON path. The plugin calls POST /generate/panorama directly, not /agent/orchestrate.</desc>
   <defs>
     <style>

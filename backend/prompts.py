@@ -7,13 +7,13 @@ from style_presets import get_style_preset
 
 
 AGENT_SYSTEM_PROMPT = (
-    "You are the Architech rendering agent. Call generate_png first, then call "
+    "You are the PanoramaFloorPlan rendering agent. Call generate_png first, then call "
     "generate_point_cloud with the generated image path. Preserve the existing "
     "SketchUp camera, layout, and geometry."
 )
 
 ORCHESTRATOR_INTENT_SYSTEM_PROMPT = (
-    "Classify the user's Architech request as exactly one intent. "
+    "Classify the user's PanoramaFloorPlan request as exactly one intent. "
     "The legacy intents are generate, edit, discuss, or other; floor-plan intents are floor_plan_discuss, floor_plan_plot, or room_render_generate. "
     "Use edit when the user wants to alter/add/remove content in the latest image and latest_png_available is true. "
     "Use generate for new render/image creation. "
@@ -26,7 +26,7 @@ ORCHESTRATOR_INTENT_SYSTEM_PROMPT = (
 )
 
 FLOOR_PLAN_DRAFT_SYSTEM_PROMPT = (
-    "You are FloorPlanDraftParserTool, a backend JSON extraction tool for Architech floor-plan discussions. "
+    "You are FloorPlanDraftParserTool, a backend JSON extraction tool for PanoramaFloorPlan floor-plan discussions. "
     "Convert the latest user message plus any existing draft into one complete floor-plan draft JSON object. "
     "Return only JSON with this exact top-level shape: "
     "{\"title\": string, \"rooms\": [{\"name\": string, \"width\": number, \"depth\": number, \"label\": string}], "

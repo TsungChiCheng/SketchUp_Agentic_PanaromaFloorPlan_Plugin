@@ -211,7 +211,7 @@ def write_obj(path: Path, point_grid: PointGrid) -> None:
         raise PointCloudError("Not enough points generated to create an OBJ mesh.")
 
     with path.open("w", encoding="ascii", newline="\n") as handle:
-        handle.write("# Architech Depth Anything V2-compatible mesh\n")
+        handle.write("# PanoramaFloorPlan Depth Anything V2-compatible mesh\n")
         for x, y, z, _r, _g, _b in points:
             handle.write(f"v {x:.6f} {y:.6f} {z:.6f}\n")
 
@@ -241,7 +241,7 @@ def write_ply(path: Path, points: list[Point]) -> None:
     with path.open("w", encoding="ascii", newline="\n") as handle:
         handle.write("ply\n")
         handle.write("format ascii 1.0\n")
-        handle.write("comment Architech Depth Anything V2-compatible point cloud\n")
+        handle.write("comment PanoramaFloorPlan Depth Anything V2-compatible point cloud\n")
         handle.write(f"element vertex {len(points)}\n")
         handle.write("property float x\n")
         handle.write("property float y\n")
@@ -277,7 +277,7 @@ def write_las(path: Path, points: list[Point]) -> None:
         handle.write(struct.pack("<H", 0))
         handle.write(b"\0" * 8)
         handle.write(struct.pack("<BB", 1, 2))
-        handle.write(b"Architech".ljust(32, b"\0"))
+        handle.write(b"PanoramaFloorPlan".ljust(32, b"\0"))
         handle.write(b"DepthFallback".ljust(32, b"\0"))
         handle.write(struct.pack("<HH", 1, 2026))
         handle.write(struct.pack("<H", header_size))

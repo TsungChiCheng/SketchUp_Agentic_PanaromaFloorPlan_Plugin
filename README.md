@@ -2,13 +2,15 @@
 
 ## Outline
 
-- [Intro](#intro)
-- [Install](#install)
-- [Example Tutorial](#example-tutorial)
-- [Project Structure](#project-structure)
-- [Agent Workflow](#agent-workflow)
-- [More Documentation](#more-documentation)
-- [Tests](#tests)
+- [SketchUp Agentic Panorama FloorPlan Plugin](#sketchup-agentic-panorama-floorplan-plugin)
+  - [Outline](#outline)
+  - [Intro](#intro)
+  - [Install](#install)
+  - [Example Tutorial](#example-tutorial)
+  - [Project Structure](#project-structure)
+  - [Agent Workflow](#agent-workflow)
+  - [More Documentation](#more-documentation)
+  - [Tests](#tests)
 
 ## Intro
 
@@ -34,7 +36,7 @@ Detailed endpoint contracts, coordinate conventions, limits, and implementation 
    ```env
    BACKEND_PORT=8000
    BACKEND_HOST=127.0.0.1
-   ARCHITECH_RENDER_BACKEND_URL=http://127.0.0.1:8000
+   PANORAMA_FLOORPLAN_RENDER_BACKEND_URL=http://127.0.0.1:8000
    DEPTH_SERVICE_PORT=8001
    RENDER_PROVIDER=openai
    OPENAI_API_KEY=your-openai-api-key
@@ -43,11 +45,17 @@ Detailed endpoint contracts, coordinate conventions, limits, and implementation 
    DEPTH_MODEL=depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf
    ```
 
-2. Start the backend and depth service:
+2. Start the backend and CPU depth service:
 
    ```bash
+   # CPU depth service
    docker compose up --build
+
+   # CUDA depth service
+   docker compose -f docker-compose-cuda.yml up --build
    ```
+
+   The CUDA compose file requires an NVIDIA GPU, working NVIDIA drivers, and Docker GPU runtime support.
 
 3. Check services:
 
@@ -66,14 +74,14 @@ Detailed endpoint contracts, coordinate conventions, limits, and implementation 
 4. To use a backend running on another machine, set the SketchUp client URL:
 
    ```env
-   ARCHITECH_RENDER_BACKEND_URL=http://192.168.1.50:8000
+   PANORAMA_FLOORPLAN_RENDER_BACKEND_URL=http://192.168.1.50:8000
    ```
 
 5. Install the SketchUp extension by copying these into SketchUp's Plugins folder:
 
    ```text
-   sketchup_plugin/architech_ai_renderer.rb
-   sketchup_plugin/architech_ai_renderer/
+   sketchup_plugin/panorama_floorplan_renderer.rb
+   sketchup_plugin/panorama_floorplan_renderer/
    ```
 
 6. Restart SketchUp, then open:
@@ -98,7 +106,7 @@ Example floor-plan prompt:
 Floor plan
 1. Must be rectangular shape.
 2. Living with front door, width 10, height 20
-3. Kitchen with width 10, height 20
+3. Kitchen with width 10, height 10
 4. Office with width 10, height 10.
 5. Living has door to Office, but no door to Kitchen.
 6. A wall between Kitchen and Office.
@@ -121,7 +129,7 @@ sketchup_plugin/
   artifact download, reveal/import callbacks, and style presets.
 
 docs/
-  Product spec, implementation notes, architecture diagram, panorama flow,
+  Product spec, implementation notes, architecture diagram, tutorial,
   and current UI mock.
 
 examples/
@@ -140,8 +148,8 @@ Key files:
 - `backend/panorama_tool.py`: direct floor-plan JSON to panorama image tool.
 - `backend/agent_pipeline.py`: LangChain/OpenAI tool-calling path and deterministic fallback.
 - `depth_service/service.py`: image-depth projection and point-cloud writers.
-- `sketchup_plugin/architech_ai_renderer/main.rb`: SketchUp dialog callbacks and import/reveal behavior.
-- `sketchup_plugin/architech_ai_renderer/dialog.html`: agent chat UI.
+- `sketchup_plugin/panorama_floorplan_renderer/main.rb`: SketchUp dialog callbacks and import/reveal behavior.
+- `sketchup_plugin/panorama_floorplan_renderer/dialog.html`: agent chat UI.
 
 ## Agent Workflow
 
@@ -149,11 +157,7 @@ Key files:
 
 Render and edit flows export the SketchUp viewport through the Ruby bridge, upload it to the backend, call `/agent/orchestrate`, run the selected tool path, download artifacts, then preview/reveal/import them locally. Floor-plan chat prompts, `Plot Floor Plan`, and `Generate Room Renders` use a direct HtmlDialog `fetch` to `${backend_url}/agent/orchestrate`; these flows send draft or decoration JSON state and do not upload the viewport. The dialog then downloads SVG, PNG, and room-render artifacts through `/artifacts/download` for local previews.
 
-Panorama generation is a direct backend tool flow, enabled only after the plugin has a plotted floor-plan decoration JSON path:
-
-![SketchUp Agentic Panorama FloorPlan Plugin panorama flow](docs/panorama-flow.svg)
-
-The plugin calls `/generate/panorama` directly for this path; it does not add an `/agent/orchestrate` intent. The backend converts the floor-plan JSON into a whole-layout scene description and renders two direct 16:9 panorama options from the floor-plan center so the user can select the preferred option.
+Panorama generation is a direct backend tool flow, enabled only after the plugin has a plotted floor-plan decoration JSON path. The plugin calls `/generate/panorama` directly for this path; it does not add an `/agent/orchestrate` intent. The backend converts the floor-plan JSON into a whole-layout scene description and renders two direct 16:9 panorama options from the floor-plan center so the user can select the preferred option.
 
 SketchUp-local actions still run through Ruby callbacks because they need access to `Sketchup.active_model`: opening the large floor-plan viewer for local files, importing render PNGs, revealing point-cloud files, and importing supported point-cloud formats.
 
@@ -185,7 +189,6 @@ Generated point-cloud files can always be revealed locally. Direct PLY/LAS impor
 - Example tutorial: `docs/tutorial.md`
 - Implementation checklist and verification notes: `docs/implementation.md`
 - Agent architecture diagram: `docs/agent-architecture.svg`
-- Panorama tool flow: `docs/panorama-flow.svg`
 - Current SketchUp dialog mock: `docs/current-extension-ui.svg`
 
 ## Tests

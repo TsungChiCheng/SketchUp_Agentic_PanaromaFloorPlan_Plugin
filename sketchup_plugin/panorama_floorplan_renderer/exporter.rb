@@ -1,6 +1,6 @@
 require "fileutils"
 
-module Architech
+module PanoramaFloorPlan
   module AIRenderer
     module Exporter
       module_function
@@ -91,10 +91,10 @@ module Architech
       end
 
       def configured_export_dir
-        env_dir = ENV["ARCHITECH_EXPORT_DIR"].to_s.strip
+        env_dir = ENV["PANORAMA_FLOORPLAN_EXPORT_DIR"].to_s.strip
         return File.expand_path(env_dir) unless env_dir.empty?
 
-        repo_export_dir = File.expand_path("~/Desktop/architech/exports")
+        repo_export_dir = File.expand_path("~/Desktop/panorama_floorplan/exports")
         return repo_export_dir if Dir.exist?(repo_export_dir)
 
         File.expand_path("../../exports", __dir__)

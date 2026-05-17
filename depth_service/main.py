@@ -1,10 +1,25 @@
+import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 
 from schemas import PointCloudRequest, PointCloudResponse
-from service import PointCloudError, generate_point_cloud
+from service import PointCloudError, generate_point_cloud, get_depth_runtime
 
 
-app = FastAPI(title="Architech Depth Service", version="0.1.0")
+def preload_on_startup() -> bool:
+    return os.getenv("DEPTH_PRELOAD_ON_STARTUP", "0").lower() in {"1", "true", "yes", "on"}
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    if preload_on_startup():
+        get_depth_runtime()
+    yield
+
+
+app = FastAPI(title="PanoramaFloorPlan Depth Service", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/health")

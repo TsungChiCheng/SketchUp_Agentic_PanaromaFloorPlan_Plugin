@@ -4,14 +4,14 @@ require "uri"
 require "base64"
 require "fileutils"
 
-module Architech
+module PanoramaFloorPlan
   module AIRenderer
     class RenderClient
       DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 
       def self.default_base_url
-        configured_url = ENV["ARCHITECH_RENDER_BACKEND_URL"] ||
-          dotenv_value("ARCHITECH_RENDER_BACKEND_URL") ||
+        configured_url = ENV["PANORAMA_FLOORPLAN_RENDER_BACKEND_URL"] ||
+          dotenv_value("PANORAMA_FLOORPLAN_RENDER_BACKEND_URL") ||
           dotenv_value("BACKEND_URL")
         return configured_url if configured_url && !configured_url.empty?
 
@@ -125,11 +125,11 @@ module Architech
 
       def self.dotenv_paths
         [
-          ENV["ARCHITECH_RENDER_ENV_PATH"],
+          ENV["PANORAMA_FLOORPLAN_RENDER_ENV_PATH"],
           File.join(AIRenderer::PLUGIN_ROOT, ".env"),
           File.join(AIRenderer::REPO_ROOT, ".env"),
           File.expand_path("~/Desktop/sketchup_plugin/.env"),
-          File.expand_path("~/Desktop/architech/.env")
+          File.expand_path("~/Desktop/panorama_floorplan/.env")
         ].compact.uniq
       end
 

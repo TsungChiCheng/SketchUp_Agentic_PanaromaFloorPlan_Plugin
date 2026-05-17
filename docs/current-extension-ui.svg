@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="1120" viewBox="0 0 640 1120" role="img" aria-labelledby="title desc">
-  <title id="title">Architech Chat Agent Dialog</title>
-  <desc id="desc">Static SVG mock of the Architech chat dialog showing floor-plan discussion, follow-up draft update, direct Plot Floor Plan orchestration, decoration JSON and SVG artifacts, direct room render generation, clickable previews, backend URL and UI version visibility, and bottom composer.</desc>
+  <title id="title">PanoramaFloorPlan Chat Agent Dialog</title>
+  <desc id="desc">Static SVG mock of the PanoramaFloorPlan chat dialog showing floor-plan discussion, follow-up draft update, direct Plot Floor Plan orchestration, decoration JSON and SVG artifacts, direct room render generation, clickable previews, backend URL and UI version visibility, and bottom composer.</desc>
   <defs>
     <style>
       .bg { fill: #f5f6f8; }
@@ -25,7 +25,7 @@
   <rect class="bg" width="640" height="1120"/>
 
   <g transform="translate(32 24)">
-    <text class="title" x="0" y="20">Architech Agent</text>
+    <text class="title" x="0" y="20">PanoramaFloorPlan Agent</text>
     <text class="muted" x="412" y="20">Backend: 127.0.0.1:8000</text>
 
     <g transform="translate(0 52)">
@@ -119,7 +119,7 @@
 
     <g transform="translate(0 998)">
       <rect class="panel" x="0" y="0" width="576" height="112" rx="8"/>
-      <text class="muted" x="14" y="30">Ask Architech to render, edit, discuss, or plot a floor plan...</text>
+      <text class="muted" x="14" y="30">Ask PanoramaFloorPlan to render, edit, discuss, or plot a floor plan...</text>
       <line class="line" x1="14" y1="68" x2="562" y2="68"/>
       <rect class="panel" x="14" y="80" width="220" height="24" rx="6"/>
       <text class="text" x="24" y="97">Modern Interior</text>

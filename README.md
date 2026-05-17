@@ -39,7 +39,7 @@ Detailed endpoint contracts, coordinate conventions, limits, and implementation 
    RENDER_PROVIDER=openai
    OPENAI_API_KEY=your-openai-api-key
    OPENAI_IMAGE_MODEL=gpt-image-1.5
-   AGENT_MODEL=gpt-4.1-mini
+   AGENT_MODEL=gpt-5.4-mini
    DEPTH_MODEL=depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf
    ```
 

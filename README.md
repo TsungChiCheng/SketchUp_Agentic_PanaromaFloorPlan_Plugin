@@ -1,4 +1,4 @@
-# SketchUp Agentic text2image Plugin
+# SketchUp Agentic Text2FloorPlan Plugin
 
 ## Outline
 
@@ -12,7 +12,7 @@
 
 ## Intro
 
-SketchUp Agentic text2image Plugin is a SketchUp extension backed by local FastAPI services for agentic architectural rendering. From the SketchUp dialog, a user can ask for a render, edit the latest generated image, discuss a design direction, or generate a color point-cloud artifact from a PNG.
+SketchUp Agentic Text2FloorPlan Plugin is a SketchUp extension backed by local FastAPI services for agentic architectural rendering. From the SketchUp dialog, a user can ask for a render, edit the latest generated image, discuss a design direction, or generate a color point-cloud artifact from a PNG.
 
 The current pipeline can:
 
@@ -86,7 +86,7 @@ The dialog sends prompts with the `Chat` button. The keyboard shortcut also work
 
 UI example:
 
-![SketchUp Agentic text2image Plugin dialog](docs/current-extension-ui.svg)
+![SketchUp Agentic Text2FloorPlan Plugin dialog](docs/current-extension-ui.svg)
 
 ## Example Tutorial
 
@@ -145,13 +145,13 @@ Key files:
 
 ## Agent Workflow
 
-![SketchUp Agentic text2image Plugin agent architecture](docs/agent-architecture.svg)
+![SketchUp Agentic Text2FloorPlan Plugin agent architecture](docs/agent-architecture.svg)
 
 Render and edit flows export the SketchUp viewport through the Ruby bridge, upload it to the backend, call `/agent/orchestrate`, run the selected tool path, download artifacts, then preview/reveal/import them locally. Floor-plan chat prompts, `Plot Floor Plan`, and `Generate Room Renders` use a direct HtmlDialog `fetch` to `${backend_url}/agent/orchestrate`; these flows send draft or decoration JSON state and do not upload the viewport. The dialog then downloads SVG, PNG, and room-render artifacts through `/artifacts/download` for local previews.
 
 Panorama generation is a direct backend tool flow, enabled only after the plugin has a plotted floor-plan decoration JSON path:
 
-![SketchUp Agentic text2image Plugin panorama flow](docs/panorama-flow.svg)
+![SketchUp Agentic Text2FloorPlan Plugin panorama flow](docs/panorama-flow.svg)
 
 The plugin calls `/generate/panorama` directly for this path; it does not add an `/agent/orchestrate` intent. The backend converts the floor-plan JSON into a whole-layout scene description and renders two direct 16:9 panorama options from the floor-plan center so the user can select the preferred option.
 

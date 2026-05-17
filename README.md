@@ -1,5 +1,15 @@
 # SketchUp Agentic text2image Plugin
 
+## Outline
+
+- [Intro](#intro)
+- [Install](#install)
+- [Example Tutorial](#example-tutorial)
+- [Project Structure](#project-structure)
+- [Agent Workflow](#agent-workflow)
+- [More Documentation](#more-documentation)
+- [Tests](#tests)
+
 ## Intro
 
 SketchUp Agentic text2image Plugin is a SketchUp extension backed by local FastAPI services for agentic architectural rendering. From the SketchUp dialog, a user can ask for a render, edit the latest generated image, discuss a design direction, or generate a color point-cloud artifact from a PNG.
@@ -78,6 +88,23 @@ UI example:
 
 ![SketchUp Agentic text2image Plugin dialog](docs/current-extension-ui.svg)
 
+## Example Tutorial
+
+For a screenshot-based walkthrough, see [Plugin Tutorial: Floor Plan to Panorama Point Cloud](docs/tutorial.md).
+
+Example floor-plan prompt:
+
+```text
+Floor plan
+1. Must be rectangular shape.
+2. Living with front door, width 10, height 20
+3. Kitchen with width 10, height 20
+4. Office with width 10, height 10.
+5. Living has door to Office, but no door to Kitchen.
+6. A wall between Kitchen and Office.
+7. Connection (Living, Kitchen), (Living, Office).
+```
+
 ## Project Structure
 
 ```text
@@ -155,6 +182,7 @@ Generated point-cloud files can always be revealed locally. Direct PLY/LAS impor
 ## More Documentation
 
 - Product and endpoint spec: `docs/spec.md`
+- Example tutorial: `docs/tutorial.md`
 - Implementation checklist and verification notes: `docs/implementation.md`
 - Agent architecture diagram: `docs/agent-architecture.svg`
 - Panorama tool flow: `docs/panorama-flow.svg`

@@ -50,78 +50,61 @@
 
   <rect class="group" x="366" y="92" width="758" height="700"/>
   <text class="h" x="386" y="122">Backend machine</text>
+  <text class="m" x="386" y="140">Small set of request, routing, tool, and artifact stages</text>
 
-  <rect class="accent" x="394" y="148" width="212" height="70"/>
-  <text class="h" x="414" y="174">POST /uploads/viewport</text>
-  <text class="t" x="414" y="195">Stores exported viewport</text>
-  <text class="m" x="414" y="210">backend exports/</text>
+  <rect class="accent" x="410" y="158" width="214" height="70"/>
+  <text class="h" x="430" y="184">POST /uploads/viewport</text>
+  <text class="t" x="430" y="205">Store exported viewport</text>
+  <text class="m" x="430" y="220">exports/ source image</text>
 
-  <rect class="accent" x="676" y="148" width="252" height="78"/>
-  <text class="h" x="696" y="174">POST /agent/orchestrate</text>
-  <text class="t" x="696" y="195">Classifies user intent with LLM</text>
-  <text class="m" x="696" y="212">generate, edit, discuss, room_render_generate</text>
-  <text class="m" x="696" y="226">floor_plan_discuss, floor_plan_plot</text>
+  <rect class="accent" x="696" y="158" width="244" height="70"/>
+  <text class="h" x="716" y="184">POST /agent/orchestrate</text>
+  <text class="t" x="716" y="205">LLM intent routing</text>
+  <text class="m" x="716" y="220">drafts + latest artifacts</text>
 
-  <polygon class="decision" points="802,258 910,323 802,388 694,323"/>
-  <text class="h" x="757" y="315">Orchestrator</text>
-  <text class="m" x="730" y="335">intent + draft JSON</text>
+  <polygon class="decision" points="818,264 920,322 818,380 716,322"/>
+  <text class="h" x="773" y="315">Orchestrator</text>
+  <text class="m" x="787" y="335">Agents</text>
 
-  <rect class="box" x="394" y="270" width="196" height="74"/>
-  <text class="h" x="414" y="296">PromptGenerationAgent</text>
-  <text class="t" x="414" y="317">Refine render prompt</text>
-  <text class="m" x="414" y="333">then generate PNG</text>
+  <rect class="box" x="410" y="438" width="160" height="128"/>
+  <text class="h" x="430" y="464">Render / Edit Agent</text>
+  <text class="m" x="430" y="486">Tools:</text>
+  <text class="m" x="430" y="504">generate_png</text>
+  <text class="m" x="430" y="522">edit_image</text>
+  <text class="m" x="430" y="540">depth_service</text>
 
-  <rect class="box" x="394" y="382" width="196" height="74"/>
-  <text class="h" x="414" y="408">ImageEditAgent</text>
-  <text class="t" x="414" y="429">Use latest PNG</text>
-  <text class="m" x="414" y="445">then regenerate PLY</text>
+  <rect class="plan" x="610" y="438" width="170" height="128"/>
+  <text class="h" x="630" y="464">Floor Plan Agent</text>
+  <text class="m" x="630" y="486">Tools:</text>
+  <text class="m" x="630" y="504">discussion_draft</text>
+  <text class="m" x="630" y="522">decorate_layout</text>
+  <text class="m" x="630" y="540">plot_svg_png</text>
 
-  <rect class="plan" x="654" y="430" width="214" height="86"/>
-  <text class="h" x="674" y="456">FloorPlanDiscussionAgent</text>
-  <text class="t" x="674" y="477">Capture rooms, sizes</text>
-  <text class="m" x="674" y="493">adjacency, openings, labels</text>
+  <rect class="plan" x="820" y="438" width="128" height="128"/>
+  <text class="h" x="840" y="464">Room Agent</text>
+  <text class="m" x="840" y="486">Tools:</text>
+  <text class="m" x="840" y="504">room_render</text>
+  <text class="m" x="840" y="522">decor JSON</text>
+  <text class="m" x="840" y="540">per-room PNGs</text>
 
-  <rect class="plan" x="654" y="532" width="214" height="74"/>
-  <text class="h" x="674" y="558">FloorPlanDecorationTool</text>
-  <text class="t" x="674" y="579">Furniture + door JSON</text>
-  <text class="m" x="674" y="595">rooms, x/y, sizes, swings</text>
+  <rect class="plan" x="988" y="438" width="108" height="128"/>
+  <text class="h" x="1008" y="464">Panorama</text>
+  <text class="h" x="1008" y="480">Agent</text>
+  <text class="m" x="1008" y="504">Tools:</text>
+  <text class="m" x="1008" y="522">panorama</text>
+  <text class="m" x="1008" y="540">two 16:9 PNGs</text>
 
-  <rect class="plan" x="654" y="626" width="214" height="74"/>
-  <text class="h" x="674" y="652">FloorPlanPlotTool</text>
-  <text class="t" x="674" y="673">Plot SVG from JSON</text>
-  <text class="m" x="674" y="689">SVG + PNG placeholder</text>
+  <rect class="box" x="706" y="604" width="214" height="58"/>
+  <text class="h" x="726" y="630">Discuss / Clarify Agent</text>
+  <text class="m" x="726" y="648">Tools: none</text>
 
-  <rect class="box" x="956" y="270" width="140" height="74"/>
-  <text class="h" x="976" y="296">Discuss</text>
-  <text class="t" x="976" y="317">No tools</text>
-  <text class="m" x="976" y="333">save temp prompt</text>
+  <rect class="store" x="610" y="706" width="214" height="58"/>
+  <text class="h" x="630" y="732">Backend Artifacts</text>
+  <text class="m" x="630" y="750">outputs/, pointclouds/</text>
 
-  <rect class="box" x="956" y="382" width="140" height="74"/>
-  <text class="h" x="976" y="408">Other</text>
-  <text class="t" x="976" y="429">Clarify</text>
-  <text class="m" x="976" y="445">no tool call</text>
-
-  <rect class="plan" x="956" y="494" width="140" height="74"/>
-  <text class="h" x="976" y="520">RoomRenderTool</text>
-  <text class="t" x="976" y="541">Decor JSON to PNGs</text>
-  <text class="m" x="976" y="557">one image per room</text>
-
-  <rect class="accent" x="394" y="548" width="196" height="74"/>
-  <text class="h" x="414" y="574">Image tools</text>
-  <text class="m" x="414" y="592">generate_png</text>
-  <text class="m" x="414" y="608">edit_image</text>
-
-  <rect class="accent" x="394" y="650" width="196" height="58"/>
-  <text class="h" x="414" y="676">Depth service</text>
-  <text class="m" x="414" y="694">PNG to PLY/LAS/OBJ</text>
-
-  <rect class="store" x="654" y="716" width="214" height="58"/>
-  <text class="h" x="674" y="742">Backend Artifacts</text>
-  <text class="m" x="674" y="760">outputs/, pointclouds/</text>
-
-  <rect class="accent" x="926" y="716" width="170" height="58"/>
-  <text class="h" x="946" y="742">/artifacts/download</text>
-  <text class="m" x="946" y="760">mirror files locally</text>
+  <rect class="accent" x="888" y="706" width="190" height="58"/>
+  <text class="h" x="908" y="732">/artifacts/download</text>
+  <text class="m" x="908" y="750">mirror files locally</text>
 
   <rect class="box" x="56" y="400" width="238" height="72"/>
   <text class="h" x="76" y="426">SVG Preview Viewer</text>
@@ -129,33 +112,27 @@
   <text class="m" x="76" y="463">opens larger SVG dialog</text>
 
   <path class="edge" d="M175 240 L175 278"/>
-  <path class="edge" d="M294 194 C455 112 548 112 676 178"/>
-  <path class="edge" d="M294 319 C342 319 342 183 394 183"/>
-  <path class="edge" d="M606 183 L676 183"/>
-  <path class="edge" d="M802 226 L802 258"/>
-  <path class="edge" d="M694 316 L590 307"/>
-  <path class="edge" d="M694 330 L590 419"/>
-  <path class="edge" d="M802 388 L761 430"/>
-  <path class="edge" d="M761 516 L761 532"/>
-  <path class="edge" d="M761 606 L761 626"/>
-  <path class="edge" d="M910 315 L956 307"/>
-  <path class="edge" d="M910 335 L956 419"/>
-  <path class="edge" d="M910 350 L956 531"/>
-  <path class="edge" d="M492 344 L492 548"/>
-  <path class="edge" d="M492 456 L492 548"/>
-  <path class="edge" d="M492 622 L492 650"/>
-  <path class="edge" d="M590 679 L654 745"/>
-  <path class="edge" d="M761 700 L761 716"/>
-  <path class="edge" d="M956 568 L868 745"/>
-  <path class="edge" d="M868 745 L926 745"/>
-  <path class="edge" d="M926 745 C770 800 376 752 175 652"/>
+  <path class="edge" d="M294 194 C438 126 560 126 696 194"/>
+  <path class="edge" d="M294 319 C346 319 346 193 410 193"/>
+  <path class="edge" d="M624 193 L696 193"/>
+  <path class="edge" d="M818 228 L818 264"/>
+  <path class="edge" d="M716 322 C630 340 526 382 490 438"/>
+  <path class="edge" d="M764 374 C724 392 704 412 695 438"/>
+  <path class="edge" d="M872 368 C882 392 884 416 884 438"/>
+  <path class="edge" d="M912 332 C1000 350 1042 390 1042 438"/>
+  <path class="softedge" d="M818 380 L813 604"/>
+  <path class="edge" d="M490 566 C540 650 610 690 676 706"/>
+  <path class="edge" d="M695 566 L695 706"/>
+  <path class="edge" d="M884 566 C840 650 780 690 724 706"/>
+  <path class="edge" d="M1042 566 C966 650 856 694 780 706"/>
+  <path class="edge" d="M824 735 L888 735"/>
+  <path class="edge" d="M888 735 C754 800 376 752 175 652"/>
   <path class="softedge" d="M175 594 C175 524 175 492 175 472"/>
   <path class="softedge" d="M175 400 C175 380 175 374 175 360"/>
 
   <text class="m" x="328" y="286">render/edit upload viewport</text>
-  <text class="m" x="454" y="126">direct floor-plan fetch</text>
-  <text class="m" x="726" y="250">route request</text>
-  <text class="m" x="608" y="407">floor-plan draft JSON</text>
-  <text class="m" x="896" y="696">remote files</text>
+  <text class="m" x="520" y="112">direct floor-plan fetch</text>
+  <text class="m" x="748" y="252">route request</text>
+  <text class="m" x="826" y="696">remote files</text>
   <text class="m" x="384" y="804">download render PNG, depth preview, point cloud, floor-plan SVG, decoration JSON, and room PNGs; SketchUp imports stay Ruby-local</text>
 </svg>

@@ -174,7 +174,7 @@
       }
 
       .preview-grid img.panorama-preview {
-        aspect-ratio: 32 / 9;
+        aspect-ratio: 16 / 9;
       }
 
       .composer {
@@ -445,7 +445,7 @@
           choices.className = "choice-row";
           choices.append(
             choiceButton("Import PNG", () => importPng(png)),
-            choiceButton("Generate PLY", () => generatePointCloud(png))
+            choiceButton("Estimate Depth", () => generatePointCloud(png))
           );
           message.appendChild(choices);
 
@@ -564,7 +564,15 @@
             const previews = document.createElement("div");
             previews.className = "preview-grid";
             previewUrls.forEach((url, index) => {
-              const preview = previewImage(url, `Generated panorama option ${index + 1}`);
+              const preview = previewImage(url, `Generated panorama option ${index + 1}`, {
+                clickable: true,
+                title: `Open panorama option ${index + 1} in a larger window`,
+                onClick: () => openImageViewer({
+                  image_url: url,
+                  image_path: panoramaPaths[index],
+                  title: `Panorama Option ${index + 1}`
+                })
+              });
               if (preview) {
                 preview.classList.add("panorama-preview");
                 preview.title = `Panorama option ${index + 1}`;
@@ -572,6 +580,11 @@
               }
             });
             message.appendChild(previews);
+          } else if (payload.panorama_preview_error) {
+            const warning = document.createElement("div");
+            warning.className = "hint";
+            warning.textContent = payload.panorama_preview_error;
+            message.appendChild(warning);
           }
 
           const choices = document.createElement("div");
@@ -661,6 +674,21 @@
           svg_path: svgPath,
           svg_url: svgUrl,
           title: payload.artifact_id ? `Floor Plan ${payload.artifact_id}` : "Floor Plan"
+        }));
+      }
+
+      function openImageViewer(payload) {
+        const imageUrl = payload.image_url || "";
+        const imagePath = payload.image_path || "";
+        if (!imageUrl && !imagePath) {
+          appendMessage("agent", "I do not have an image preview to open.");
+          return;
+        }
+        if (!hasSketchUpCallback("open_image_viewer")) return;
+        sketchup.open_image_viewer(JSON.stringify({
+          image_url: imageUrl,
+          image_path: imagePath,
+          title: payload.title || "Image Preview"
         }));
       }
 
@@ -778,10 +806,10 @@
         }
         if (!hasSketchUpCallback("generate_point_cloud")) return;
         setRunning(true);
-        setStatus("Generating PLY...");
-        pendingMessage = appendMessage("agent", "Converting the edited PNG into a point cloud...", "pending");
+        setStatus("Estimating depth...");
+        pendingMessage = appendMessage("agent", "Estimating depth and generating a PLY point cloud...", "pending");
         try {
-          sketchup.generate_point_cloud(JSON.stringify({ output_image_path: outputImagePath }));
+          sketchup.generate_point_cloud(JSON.stringify({ output_image_path: outputImagePath, output_format: "ply" }));
         } catch (error) {
           removePendingMessage();
           setRunning(false);
@@ -830,7 +858,7 @@
           appendMessage("agent", "I do not have a backend URL yet. Restart SketchUp to reload the synced extension.");
           return;
         }
-        setRunning(true, "Panorama", 300000);
+        setRunning(true, "Panorama", 720000);
         setStatus("Generating panorama...");
         pendingMessage = appendMessage("agent", "Generating a panorama from the floor-plan JSON...", "pending");
         try {
@@ -1033,10 +1061,18 @@
           ? payload.panorama_image_paths
           : [payload.panorama_image_path].filter(Boolean);
         if (paths.length) {
-          payload.panorama_preview_urls = await Promise.all(
-            paths.map((path) => downloadArtifactDataUrl(path, "image/png"))
-          );
+          const previews = await Promise.all(paths.map(async (path) => {
+            try {
+              return await downloadArtifactDataUrl(path, "image/png");
+            } catch (error) {
+              return null;
+            }
+          }));
+          payload.panorama_preview_urls = previews.filter(Boolean);
           payload.panorama_preview_url = payload.panorama_preview_urls[0];
+          if (payload.panorama_preview_urls.length === 0) {
+            payload.panorama_preview_error = "Panorama artifacts were generated, but preview download failed. Use the artifact paths above or check backend artifact download logs.";
+          }
         }
         return payload;
       }
@@ -1120,11 +1156,14 @@
             lastPointCloud = payload;
             const message = document.createElement("article");
             message.className = "message agent";
-            message.append(document.createTextNode("Done. I generated the point cloud from the edited render."));
+            message.append(document.createTextNode("Done. I estimated depth and generated the point cloud."));
             appendTimestamp(message);
             const artifacts = document.createElement("div");
             artifacts.className = "artifact-grid";
-            artifacts.append(artifactCard("Point Cloud", payload.pointcloud_path || payload.local_pointcloud_path));
+            artifacts.append(
+              artifactCard("Point Cloud", payload.pointcloud_path || payload.local_pointcloud_path),
+              artifactCard("Depth Model", payload.depth_model)
+            );
             message.appendChild(artifacts);
             appendPointCloudImportNote(message, payload);
             const choices = document.createElement("div");
@@ -1162,6 +1201,12 @@
         receiveFloorPlanViewerResult(payload) {
           if (payload.status !== "success") {
             appendMessage("agent", payload.error_message || "Could not open the floor-plan viewer.");
+          }
+          setResult(payload);
+        },
+        receiveImageViewerResult(payload) {
+          if (payload.status !== "success") {
+            appendMessage("agent", payload.error_message || "Could not open the image viewer.");
           }
           setResult(payload);
         },

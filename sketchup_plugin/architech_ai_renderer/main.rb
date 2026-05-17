@@ -53,6 +53,10 @@ module Architech
           handle_open_floor_plan_viewer(payload)
         end
 
+        dialog.add_action_callback("open_image_viewer") do |_context, payload|
+          handle_open_image_viewer(payload)
+        end
+
         dialog.add_action_callback("generate_room_renders") do |_context, payload|
           handle_generate_room_renders(payload)
         end
@@ -101,6 +105,20 @@ module Architech
           height: 760,
           min_width: 620,
           min_height: 480,
+          style: UI::HtmlDialog::STYLE_DIALOG
+        )
+      end
+
+      def image_viewer_dialog
+        @image_viewer_dialog ||= UI::HtmlDialog.new(
+          dialog_title: "Image Preview",
+          preferences_key: "architech_image_viewer",
+          scrollable: true,
+          resizable: true,
+          width: 980,
+          height: 640,
+          min_width: 620,
+          min_height: 420,
           style: UI::HtmlDialog::STYLE_DIALOG
         )
       end
@@ -207,11 +225,13 @@ module Architech
         output_image_path = data.fetch("output_image_path")
         local_image_path = ensure_local_output_artifact(output_image_path)
         raise "Rendered image not found: #{local_image_path}" unless File.exist?(local_image_path)
+        metadata = MetadataCollector.collect
 
         start_background_job(:generate_point_cloud, "window.ArchitechRenderer.receivePointCloudResult") do
           result = RenderClient.new.point_cloud(
             image_path: output_image_path,
-            output_format: "ply"
+            camera: metadata.fetch(:camera),
+            output_format: data.fetch("output_format", "ply")
           )
           client = RenderClient.new
           result["local_pointcloud_path"] = download_pointcloud_artifact(client, result["pointcloud_path"])
@@ -287,6 +307,27 @@ module Architech
       rescue StandardError => e
         debug_log("open_floor_plan_viewer failed: #{e.class}: #{e.message}")
         execute_js("window.ArchitechRenderer.receiveFloorPlanViewerResult(#{JSON.generate(error_payload(e))})")
+      end
+
+      def handle_open_image_viewer(payload)
+        data = JSON.parse(payload)
+        image_url = data["image_url"]
+        image_path = data["image_path"]
+        title = data["title"] || "Image Preview"
+
+        if (!image_url || image_url.empty?) && image_path && !image_path.empty?
+          path = File.expand_path(image_path)
+          raise "Image not found: #{path}" unless File.exist?(path)
+
+          image_url = local_file_url(path)
+        end
+
+        raise "No image URL is available." if !image_url || image_url.empty?
+
+        show_image_viewer(title, image_url)
+      rescue StandardError => e
+        debug_log("open_image_viewer failed: #{e.class}: #{e.message}")
+        execute_js("window.ArchitechRenderer.receiveImageViewerResult(#{JSON.generate(error_payload(e))})")
       end
 
       def handle_generate_room_renders(payload)
@@ -1022,6 +1063,40 @@ module Architech
           </html>
         HTML
         viewer = floor_plan_viewer_dialog
+        viewer.set_html(html)
+        viewer.show
+      end
+
+      def show_image_viewer(title, image_url)
+        html = <<~HTML
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1">
+              <title>#{escape_html(title)}</title>
+              <style>
+                body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f6f8; color: #202124; }
+                header { box-sizing: border-box; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #d8dde6; background: #fff; }
+                h1 { margin: 0; font-size: 15px; font-weight: 650; }
+                a { color: #153e75; font-size: 12px; text-decoration: none; }
+                main { box-sizing: border-box; height: calc(100vh - 50px); padding: 12px; }
+                .frame { width: 100%; height: 100%; border: 1px solid #d8dde6; border-radius: 8px; background: #fff; overflow: auto; }
+                img { display: block; width: 100%; height: 100%; object-fit: contain; }
+              </style>
+            </head>
+            <body>
+              <header>
+                <h1>#{escape_html(title)}</h1>
+                <a href="#{escape_html(image_url)}">Open Image</a>
+              </header>
+              <main>
+                <div class="frame"><img src="#{escape_html(image_url)}" alt="#{escape_html(title)}"></div>
+              </main>
+            </body>
+          </html>
+        HTML
+        viewer = image_viewer_dialog
         viewer.set_html(html)
         viewer.show
       end

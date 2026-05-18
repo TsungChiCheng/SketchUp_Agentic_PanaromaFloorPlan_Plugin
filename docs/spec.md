@@ -8,7 +8,7 @@ It can also discuss floor-plan requirements, accumulate a structured floor-plan 
 ## Goals
 
 - Generate architectural PNG renders from SketchUp viewport exports and scene metadata.
-- Convert generated or uploaded PNG images into colored PLY point-cloud artifacts by default, with LAS/OBJ artifacts available as optional formats.
+- Convert generated or uploaded PNG images into colored PLY point-cloud artifacts by default, with LAS and textured OBJ mesh artifacts available as optional formats.
 - Expose a full agent endpoint that runs PNG generation followed by point-cloud generation.
 - Add a floor-planner workflow that discusses layout details before asking LLM-supported tools to decorate the arrangement as JSON and plot a 2D plan SVG.
 - Keep the SketchUp plugin workflow local, inspectable, and testable.
@@ -178,7 +178,7 @@ SketchUp-local import tools are implemented as guarded dialog callbacks because 
 - `ImportPointCloudToSketchUp`
 - `OpenFloorPlanViewer`
 
-After artifact generation, the dialog asks the user whether to import the PNG. For geometry artifacts, the dialog always offers Reveal. PLY/LAS point-cloud import depends on a compatible importer, such as Scan Essentials. OBJ remains available as an optional mesh format.
+After artifact generation, the dialog asks the user whether to import the PNG. For geometry artifacts, the dialog always offers Reveal. PLY/LAS point-cloud import depends on a compatible importer, such as Scan Essentials. Textured OBJ remains available as an optional mesh format and is imported through SketchUp's generic importer with its material sidecars.
 
 The tools are structured so they can later be exposed through an MCP server without changing the endpoint contracts.
 
@@ -204,7 +204,7 @@ V1 plotting is LLM-tool-authored and diagrammatic: the backend validates that en
 
 ## Point-Cloud Format
 
-Default output is colored PLY plus a depth preview PNG. PLY is chosen as the open point-cloud interchange format. Generated coordinates use `x` for image horizontal, `y` for max-depth-shifted estimated depth (`max_depth - depth`), and `z` for image vertical/up shifted so the minimum Z is 0. LAS remains available through `output_format` for Scan Essentials or external point-cloud workflows, and OBJ remains available as an optional mesh export.
+Default output is colored PLY plus a depth preview PNG. PLY is chosen as the open point-cloud interchange format. Generated coordinates use `x` for image horizontal, `y` for max-depth-shifted estimated depth (`max_depth - depth`), and `z` for image vertical/up shifted so the minimum Z is 0. LAS remains available through `output_format` for Scan Essentials or external point-cloud workflows. OBJ remains available as an optional textured mesh export, with `.mtl` and texture PNG sidecars returned in `sidecar_paths`.
 
 ## Depth Model Runtime
 

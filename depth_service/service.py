@@ -90,7 +90,7 @@ def generate_point_cloud(request: PointCloudRequest) -> PointCloudResponse:
     ImageOps.autocontrast(depth).save(preview_path)
     point_grid = rgbd_to_point_grid(image, depth, request.camera.fov if request.camera else 60.0)
     points = flatten_point_grid(point_grid)
-    write_point_cloud(pointcloud_path, point_grid, request.output_format)
+    sidecar_paths = write_point_cloud(pointcloud_path, point_grid, request.output_format, image)
 
     return PointCloudResponse(
         status="success",
@@ -98,6 +98,7 @@ def generate_point_cloud(request: PointCloudRequest) -> PointCloudResponse:
         pointcloud_path=str(pointcloud_path),
         preview_image_path=str(preview_path),
         output_format=request.output_format,
+        sidecar_paths=[str(path) for path in sidecar_paths],
         point_count=len(points),
         depth_model=os.getenv("DEPTH_MODEL", DEFAULT_DEPTH_MODEL),
         warnings=[],
@@ -189,29 +190,45 @@ def flatten_point_grid(point_grid: PointGrid) -> list[Point]:
     return points
 
 
-def write_point_cloud(path: Path, point_grid: PointGrid, output_format: str) -> None:
+def write_point_cloud(path: Path, point_grid: PointGrid, output_format: str, image: Image.Image | None = None) -> list[Path]:
     points = flatten_point_grid(point_grid)
     if output_format == "obj":
-        write_obj(path, point_grid)
-        return
+        if image is None:
+            raise PointCloudError("OBJ mesh export requires a source image texture.")
+        return write_obj(path, point_grid, image)
     if output_format == "ply":
         write_ply(path, points)
-        return
+        return []
     if output_format == "las":
         write_las(path, points)
-        return
+        return []
     raise PointCloudError(f"Unsupported point-cloud output format: {output_format}")
 
 
-def write_obj(path: Path, point_grid: PointGrid) -> None:
+def write_obj(path: Path, point_grid: PointGrid, image: Image.Image) -> list[Path]:
     points = flatten_point_grid(point_grid)
     if not points:
         raise PointCloudError("No points generated from image.")
     if len(point_grid) < 2 or min(len(row) for row in point_grid) < 2:
         raise PointCloudError("Not enough points generated to create an OBJ mesh.")
 
+    material_name = "panorama_floorplan_texture"
+    mtl_path = path.with_suffix(".mtl")
+    texture_path = path.with_name(f"{path.stem}_texture.png")
+    image.save(texture_path)
+
+    with mtl_path.open("w", encoding="ascii", newline="\n") as handle:
+        handle.write("# PanoramaFloorPlan textured mesh material\n")
+        handle.write(f"newmtl {material_name}\n")
+        handle.write("Ka 1.000000 1.000000 1.000000\n")
+        handle.write("Kd 1.000000 1.000000 1.000000\n")
+        handle.write("Ks 0.000000 0.000000 0.000000\n")
+        handle.write(f"map_Kd {texture_path.name}\n")
+
     with path.open("w", encoding="ascii", newline="\n") as handle:
-        handle.write("# PanoramaFloorPlan Depth Anything V2-compatible mesh\n")
+        handle.write("# PanoramaFloorPlan Depth Anything V2-compatible textured mesh\n")
+        handle.write(f"mtllib {mtl_path.name}\n")
+        handle.write(f"usemtl {material_name}\n")
         for x, y, z, _r, _g, _b in points:
             handle.write(f"v {x:.6f} {y:.6f} {z:.6f}\n")
 
@@ -220,6 +237,12 @@ def write_obj(path: Path, point_grid: PointGrid) -> None:
         for row in point_grid:
             row_offsets.append(vertex_index)
             vertex_index += len(row)
+
+        for row_index, row in enumerate(point_grid):
+            v = 1.0 - (row_index / (len(point_grid) - 1))
+            for column_index, _point in enumerate(row):
+                u = column_index / (len(row) - 1)
+                handle.write(f"vt {u:.6f} {v:.6f}\n")
 
         for row_index in range(len(point_grid) - 1):
             current_row = point_grid[row_index]
@@ -230,8 +253,10 @@ def write_obj(path: Path, point_grid: PointGrid) -> None:
                 b = a + 1
                 c = row_offsets[row_index + 1] + column_index
                 d = c + 1
-                handle.write(f"f {a} {c} {b}\n")
-                handle.write(f"f {b} {c} {d}\n")
+                handle.write(f"f {a}/{a} {c}/{c} {b}/{b}\n")
+                handle.write(f"f {b}/{b} {c}/{c} {d}/{d}\n")
+
+    return [mtl_path, texture_path]
 
 
 def write_ply(path: Path, points: list[Point]) -> None:

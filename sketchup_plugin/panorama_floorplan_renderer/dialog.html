@@ -177,6 +177,55 @@
         aspect-ratio: 16 / 9;
       }
 
+      .panorama-option-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .panorama-option {
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .panorama-option img {
+        display: block;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        object-fit: contain;
+        border: 1px solid #d8dde6;
+        border-radius: 6px;
+        background: #f0f2f5;
+      }
+
+      .panorama-option img.clickable-preview {
+        cursor: zoom-in;
+      }
+
+      .panorama-option-actions {
+        display: grid;
+        gap: 8px;
+      }
+
+      .panorama-option-actions button {
+        width: 100%;
+        border: 1px solid #c8ced8;
+        border-radius: 999px;
+        padding: 6px 10px;
+        background: #ffffff;
+        color: #202124;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .panorama-option-actions button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+
       .composer {
         border: 1px solid #d8dde6;
         border-radius: 8px;
@@ -446,7 +495,8 @@
           choices.className = "choice-row";
           choices.append(
             choiceButton("Import PNG", () => importPng(png)),
-            choiceButton("Estimate Depth", () => generatePointCloud(png))
+            choiceButton("Estimate Depth", () => generatePointCloud(png)),
+            choiceButton("Convert to Colored Mesh", () => generatePointCloud(png, { outputFormat: "obj" }))
           );
           message.appendChild(choices);
 
@@ -562,51 +612,70 @@
             ? payload.panorama_preview_urls
             : [payload.panorama_preview_url].filter(Boolean);
           if (previewUrls.length) {
-            const previews = document.createElement("div");
-            previews.className = "preview-grid";
-            previewUrls.forEach((url, index) => {
+            const optionsGrid = document.createElement("div");
+            optionsGrid.className = "panorama-option-grid";
+            panoramaPaths.forEach((path, index) => {
+              const option = document.createElement("div");
+              option.className = "panorama-option";
+              const url = previewUrls[index] || payload.panorama_preview_url || "";
               const preview = previewImage(url, `Generated panorama option ${index + 1}`, {
                 clickable: true,
                 title: `Open panorama option ${index + 1} in a larger window`,
                 onClick: () => openImageViewer({
                   image_url: url,
-                  image_path: panoramaPaths[index],
+                  image_path: path,
                   title: `Panorama Option ${index + 1}`
                 })
               });
               if (preview) {
                 preview.classList.add("panorama-preview");
                 preview.title = `Panorama option ${index + 1}`;
-                previews.appendChild(preview);
+                option.appendChild(preview);
               }
+
+              const actions = document.createElement("div");
+              actions.className = "panorama-option-actions";
+              actions.append(
+                choiceButton(`Select ${index + 1} and Convert point cloud`, () => {
+                  payload.selected_panorama_image_path = path;
+                  payload.selected_panorama_index = index + 1;
+                  appendMessage("agent", `Selected panorama option ${index + 1}. Converting it to a point cloud.`);
+                  generatePointCloud(
+                    { output_image_path: path },
+                    {
+                      sourceType: "panorama",
+                      sourceLabel: `Panorama option ${index + 1}`,
+                      sourceImagePath: path,
+                      sourcePreviewUrl: url
+                    }
+                  );
+                }),
+                choiceButton(`Select ${index + 1} and Convert mesh`, () => {
+                  payload.selected_panorama_image_path = path;
+                  payload.selected_panorama_index = index + 1;
+                  appendMessage("agent", `Selected panorama option ${index + 1}. Converting it to a colored mesh.`);
+                  generatePointCloud(
+                    { output_image_path: path },
+                    {
+                      outputFormat: "obj",
+                      sourceType: "panorama",
+                      sourceLabel: `Panorama option ${index + 1}`,
+                      sourceImagePath: path,
+                      sourcePreviewUrl: url
+                    }
+                  );
+                })
+              );
+              option.appendChild(actions);
+              optionsGrid.appendChild(option);
             });
-            message.appendChild(previews);
+            message.appendChild(optionsGrid);
           } else if (payload.panorama_preview_error) {
             const warning = document.createElement("div");
             warning.className = "hint";
             warning.textContent = payload.panorama_preview_error;
             message.appendChild(warning);
           }
-
-          const choices = document.createElement("div");
-          choices.className = "choice-row";
-          panoramaPaths.forEach((path, index) => {
-            choices.appendChild(choiceButton(`Select ${index + 1} and Convert point cloud`, () => {
-              payload.selected_panorama_image_path = path;
-              payload.selected_panorama_index = index + 1;
-              appendMessage("agent", `Selected panorama option ${index + 1}. Converting it to a point cloud.`);
-              generatePointCloud(
-                { output_image_path: path },
-                {
-                  sourceType: "panorama",
-                  sourceLabel: `Panorama option ${index + 1}`,
-                  sourceImagePath: path,
-                  sourcePreviewUrl: previewUrls[index] || payload.panorama_preview_url || ""
-                }
-              );
-            }));
-          });
-          message.appendChild(choices);
 
           if (payload.scene_description) {
             const note = document.createElement("div");
@@ -794,7 +863,10 @@
         }
         if (!hasSketchUpCallback("import_point_cloud")) return;
         setStatus(`Importing ${pointCloudFormat(pointCloud)}...`);
-        sketchup.import_point_cloud(JSON.stringify({ pointcloud_path: pointcloudPath }));
+        sketchup.import_point_cloud(JSON.stringify({
+          pointcloud_path: pointcloudPath,
+          sidecar_paths: pointCloud.sidecar_paths || []
+        }));
       }
 
       function revealPointCloud(pointCloud) {
@@ -815,17 +887,24 @@
           return;
         }
         if (!hasSketchUpCallback("generate_point_cloud")) return;
+        const outputFormat = options.outputFormat || "ply";
+        const isMesh = outputFormat === "obj";
         setRunning(true);
-        setStatus("Estimating depth...");
-        pendingMessage = appendMessage("agent", "Estimating depth and generating a PLY point cloud...", "pending");
+        setStatus(isMesh ? "Generating mesh..." : "Estimating depth...");
+        pendingMessage = appendMessage(
+          "agent",
+          isMesh ? "Estimating depth and generating a textured OBJ mesh..." : "Estimating depth and generating a PLY point cloud...",
+          "pending"
+        );
         pendingPointCloudContext = {
           sourceType: options.sourceType || "image",
           sourceLabel: options.sourceLabel || "Source image",
           sourceImagePath: options.sourceImagePath || outputImagePath,
-          sourcePreviewUrl: options.sourcePreviewUrl || png.render_preview_url || ""
+          sourcePreviewUrl: options.sourcePreviewUrl || png.render_preview_url || "",
+          outputFormat
         };
         try {
-          sketchup.generate_point_cloud(JSON.stringify({ output_image_path: outputImagePath, output_format: "ply" }));
+          sketchup.generate_point_cloud(JSON.stringify({ output_image_path: outputImagePath, output_format: outputFormat }));
         } catch (error) {
           pendingPointCloudContext = null;
           removePendingMessage();
@@ -1170,17 +1249,19 @@
           pendingPointCloudContext = null;
           setRunning(false);
           removePendingMessage();
-          setStatus(payload.status === "success" ? "Point cloud complete." : "Point cloud failed.");
+          const format = pointCloudFormat(payload);
+          const isMesh = format === "OBJ";
+          setStatus(payload.status === "success" ? (isMesh ? "Mesh complete." : "Point cloud complete.") : (isMesh ? "Mesh failed." : "Point cloud failed."));
           if (payload.status === "success") {
             lastPointCloud = payload;
             const message = document.createElement("article");
             message.className = "message agent";
-            message.append(document.createTextNode("Done. I estimated depth and generated the point cloud."));
+            message.append(document.createTextNode(isMesh ? "Done. I estimated depth and generated the colored mesh." : "Done. I estimated depth and generated the point cloud."));
             appendTimestamp(message);
             const artifacts = document.createElement("div");
             artifacts.className = "artifact-grid";
             artifacts.append(
-              artifactCard("Point Cloud", payload.pointcloud_path || payload.local_pointcloud_path),
+              artifactCard(isMesh ? "Colored Mesh" : "Point Cloud", payload.pointcloud_path || payload.local_pointcloud_path),
               artifactCard("Depth Model", payload.depth_model),
               artifactCard("Source", pointCloudContext ? pointCloudContext.sourceLabel : "Image")
             );

@@ -48,6 +48,7 @@ def test_depth_service_generates_ply_and_preview_by_default(monkeypatch, tmp_pat
     assert Path(body["pointcloud_path"]).exists()
     assert Path(body["pointcloud_path"]).suffix == ".ply"
     assert Path(body["pointcloud_path"]).read_text(encoding="ascii").startswith("ply\n")
+    assert body["sidecar_paths"] == []
     assert Path(body["preview_image_path"]).exists()
     assert body["depth_model"] == DEFAULT_DEPTH_MODEL
     assert body["warnings"] == []
@@ -98,9 +99,18 @@ def test_depth_service_can_generate_obj(monkeypatch, tmp_path: Path) -> None:
     body = response.json()
     assert body["output_format"] == "obj"
     assert Path(body["pointcloud_path"]).suffix == ".obj"
+    assert len(body["sidecar_paths"]) == 2
+    assert {Path(path).suffix for path in body["sidecar_paths"]} == {".mtl", ".png"}
+    assert all(Path(path).exists() for path in body["sidecar_paths"])
     obj_text = Path(body["pointcloud_path"]).read_text(encoding="ascii")
+    assert "\nmtllib " in obj_text
+    assert "\nusemtl panorama_floorplan_texture" in obj_text
     assert "\nv " in obj_text
+    assert "\nvt " in obj_text
     assert "\nf " in obj_text
+    assert "/" in next(line for line in obj_text.splitlines() if line.startswith("f "))
+    mtl_path = next(Path(path) for path in body["sidecar_paths"] if Path(path).suffix == ".mtl")
+    assert "map_Kd " in mtl_path.read_text(encoding="ascii")
 
 
 def test_depth_service_can_generate_las(monkeypatch, tmp_path: Path) -> None:
@@ -120,6 +130,7 @@ def test_depth_service_can_generate_las(monkeypatch, tmp_path: Path) -> None:
     body = response.json()
     assert body["output_format"] == "las"
     assert Path(body["pointcloud_path"]).suffix == ".las"
+    assert body["sidecar_paths"] == []
     assert Path(body["pointcloud_path"]).read_bytes()[:4] == b"LASF"
 
 

@@ -186,6 +186,7 @@ module PanoramaFloorPlan
       def handle_import_point_cloud(payload)
         data = JSON.parse(payload)
         path = ensure_local_pointcloud_artifact(data.fetch("pointcloud_path"))
+        Array(data["sidecar_paths"]).each { |sidecar_path| ensure_local_pointcloud_artifact(sidecar_path) }
         raise "Point cloud not found: #{path}" unless File.exist?(path)
 
         model = Sketchup.active_model
@@ -235,6 +236,7 @@ module PanoramaFloorPlan
           )
           client = RenderClient.new
           result["local_pointcloud_path"] = download_pointcloud_artifact(client, result["pointcloud_path"])
+          result["local_sidecar_paths"] = download_pointcloud_sidecars(client, result["sidecar_paths"])
           result["local_preview_image_path"] = download_pointcloud_artifact(client, result["preview_image_path"])
           result["pointcloud_preview_url"] = local_file_url(result["local_preview_image_path"])
           result
@@ -368,6 +370,7 @@ module PanoramaFloorPlan
           result["local_export_image_path"] = export_path
           result["export_preview_url"] = local_file_url(export_path)
           point_cloud["local_pointcloud_path"] = download_pointcloud_artifact(client, point_cloud["pointcloud_path"]) if point_cloud["pointcloud_path"]
+          point_cloud["local_sidecar_paths"] = download_pointcloud_sidecars(client, point_cloud["sidecar_paths"])
           point_cloud["local_preview_image_path"] = download_pointcloud_artifact(client, point_cloud["preview_image_path"]) if point_cloud["preview_image_path"]
           point_cloud["pointcloud_preview_url"] = local_file_url(point_cloud["local_preview_image_path"]) if point_cloud["local_preview_image_path"]
           result["point_cloud"] = point_cloud
@@ -550,6 +553,14 @@ module PanoramaFloorPlan
               $localPointCloud = Download-Artifact $job.backend_url $job.local_project_root $result.point_cloud.pointcloud_path
               $result.point_cloud | Add-Member -Force -NotePropertyName local_pointcloud_path -NotePropertyValue $localPointCloud
             }
+            if ($result.point_cloud.sidecar_paths) {
+              Write-Log "downloading point cloud sidecar artifacts"
+              $localSidecars = @()
+              foreach ($sidecarPath in $result.point_cloud.sidecar_paths) {
+                $localSidecars += Download-Artifact $job.backend_url $job.local_project_root $sidecarPath
+              }
+              $result.point_cloud | Add-Member -Force -NotePropertyName local_sidecar_paths -NotePropertyValue $localSidecars
+            }
             if ($result.point_cloud.preview_image_path) {
               Write-Log "downloading depth preview artifact"
               $localPreview = Download-Artifact $job.backend_url $job.local_project_root $result.point_cloud.preview_image_path
@@ -686,6 +697,7 @@ module PanoramaFloorPlan
         if point_cloud["pointcloud_path"]
           point_cloud["local_pointcloud_path"] = download_pointcloud_artifact(client, point_cloud["pointcloud_path"])
         end
+        point_cloud["local_sidecar_paths"] = download_pointcloud_sidecars(client, point_cloud["sidecar_paths"])
         if point_cloud["preview_image_path"]
           point_cloud["local_preview_image_path"] = download_pointcloud_artifact(client, point_cloud["preview_image_path"])
           point_cloud["pointcloud_preview_url"] = local_file_url(point_cloud["local_preview_image_path"])
@@ -979,6 +991,12 @@ module PanoramaFloorPlan
 
       def download_pointcloud_artifact(client, path)
         client.download_artifact(path, local_pointcloud_path(path))
+      end
+
+      def download_pointcloud_sidecars(client, paths)
+        Array(paths).compact.map do |path|
+          download_pointcloud_artifact(client, path)
+        end
       end
 
       def local_output_path(path)

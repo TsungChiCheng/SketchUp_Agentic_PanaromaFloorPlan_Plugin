@@ -212,6 +212,7 @@ def test_generate_point_cloud_endpoint_calls_depth_service(monkeypatch, tmp_path
                 "pointcloud_path": "/app/pointclouds/pointcloud_test.ply",
                 "preview_image_path": "/app/pointclouds/pointcloud_test_depth_preview.png",
                 "output_format": "ply",
+                "sidecar_paths": [],
                 "point_count": 10,
                 "depth_model": "depth-anything-v2-metric-indoor-small",
                 "warnings": [],

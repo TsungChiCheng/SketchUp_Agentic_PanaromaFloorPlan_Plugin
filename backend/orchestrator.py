@@ -231,6 +231,7 @@ def run_orchestrator(request: AgentOrchestrateRequest, settings: Settings) -> Ag
                     "type": "point_cloud",
                     "path": point_cloud.pointcloud_path,
                     "preview_image_path": point_cloud.preview_image_path,
+                    "sidecar_paths": point_cloud.sidecar_paths,
                     "artifact_id": point_cloud.artifact_id,
                 },
             ],

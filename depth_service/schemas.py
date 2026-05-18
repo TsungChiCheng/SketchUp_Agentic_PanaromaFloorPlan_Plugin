@@ -39,6 +39,7 @@ class PointCloudResponse(StrictModel):
     pointcloud_path: str
     preview_image_path: str
     output_format: Literal["ply", "las", "obj"] = "ply"
+    sidecar_paths: list[str] = Field(default_factory=list)
     point_count: int = Field(ge=0)
     depth_model: str
     warnings: list[str] = Field(default_factory=list)

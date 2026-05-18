@@ -34,7 +34,7 @@ SketchUp viewport -> exports/*.png
 SketchUp plugin -> /uploads/viewport -> backend exports/*.png
 /generate/png -> outputs/*.png
 /edit/image -> outputs/*.png
-/generate/point-cloud -> pointclouds/*.ply by default + pointclouds/*_depth_preview.png
+/generate/point-cloud -> pointclouds/*.ply by default + pointclouds/*_depth_preview.png; OBJ output also writes .mtl and texture PNG sidecars
 /agent/run -> outputs/*.png + pointclouds/*.ply by default
 /agent/orchestrate floor_plan_plot -> outputs/*.svg + outputs/*.layout.json + outputs/*.png placeholder
 SketchUp plugin -> /artifacts/download -> local outputs/ and pointclouds/
@@ -67,9 +67,9 @@ The import step is handled in the SketchUp plugin, not the backend, because it n
 
 - `import_render` imports generated PNG files as SketchUp images.
 - `reveal_point_cloud` reveals the generated geometry file locally.
-- `import_point_cloud` imports OBJ through SketchUp's generic importer. PLY/LAS/LAZ import never uses generic `model.import`; it only runs through a detected Scan Essentials Ruby import adapter.
+- `import_point_cloud` imports textured OBJ through SketchUp's generic importer after downloading its `.mtl` and texture sidecars. PLY/LAS/LAZ import never uses generic `model.import`; it only runs through a detected Scan Essentials Ruby import adapter.
 
-After `/agent/orchestrate` or `/agent/run` returns artifacts, the chat dialog asks the user whether to import the PNG. For geometry artifacts, the dialog always offers Reveal. PLY/LAS import requires a compatible importer such as Scan Essentials; OBJ remains available as an optional mesh format.
+After `/agent/orchestrate` or `/agent/run` returns artifacts, the chat dialog asks the user whether to import the PNG. For geometry artifacts, the dialog always offers Reveal. PLY/LAS import requires a compatible importer such as Scan Essentials; textured OBJ remains available as an optional mesh format.
 
 If Scan Essentials does not expose a concrete Ruby API, `import_point_cloud` reports that direct import is unavailable and asks the user to reveal/import manually.
 

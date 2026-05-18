@@ -20,7 +20,7 @@ The current pipeline can:
 
 - Upload the active SketchUp viewport to a local or remote backend.
 - Generate or edit PNG render images with the configured render provider.
-- Convert generated PNGs into colored PLY point clouds through the depth service.
+- Convert generated PNGs into colored PLY point clouds or textured OBJ mesh artifacts through the depth service.
 - Route dialog messages through `/agent/orchestrate` so generate, edit, discuss, floor-plan discussion, plotting, room-render generation, and clarification flows are handled by the backend instead of frontend keyword checks.
 - Discuss floor-plan requirements, keep the structured draft in dialog state, then use Plot Floor Plan to send that draft back through `/agent/orchestrate` for LLM-supported decoration JSON and SVG plotting.
 - Generate room-level interior PNGs from the plotted floor-plan decoration JSON through the same backend orchestrator flow.
@@ -98,7 +98,7 @@ UI example:
 
 ## Example Tutorial
 
-For a screenshot-based walkthrough, see [Plugin Tutorial: Floor Plan to Panorama Point Cloud](docs/tutorial.md).
+For a screenshot-based walkthrough, see [Plugin Tutorial: Floor Plan to Panorama Geometry](docs/tutorial.md).
 
 Example floor-plan prompt:
 
@@ -122,7 +122,7 @@ backend/
 
 depth_service/
   Depth Anything V2 metric model service boundary,
-  RGB-D to PLY/LAS/OBJ generation, and depth-service tests.
+  RGB-D to PLY/LAS/textured OBJ generation, and depth-service tests.
 
 sketchup_plugin/
   SketchUp Ruby extension, HtmlDialog UI, viewport export, backend client,
@@ -181,7 +181,17 @@ y = max_depth - depth
 z = image vertical/up shifted so min(z) = 0
 ```
 
-Generated point-cloud files can always be revealed locally. Direct PLY/LAS import is only enabled when the plugin can find a callable Scan Essentials Ruby import API; otherwise reveal the file and import it manually through Scan Essentials. OBJ import uses SketchUp's generic importer.
+Generated geometry files can always be revealed locally. Direct PLY/LAS import is only enabled when the plugin can find a callable Scan Essentials Ruby import API; otherwise reveal the file and import it manually through Scan Essentials.
+
+Textured OBJ mesh output includes three linked files in the same local `pointclouds/` folder:
+
+```text
+pointcloud_....obj
+pointcloud_....mtl
+pointcloud_..._texture.png
+```
+
+The OBJ uses the same coordinate convention as the PLY point cloud, but stores texture coordinates and faces instead of per-vertex RGB. SketchUp's native import list does not include OBJ. To use the colored mesh in SketchUp, install an OBJ importer extension or open the OBJ in Blender and export it as Collada `.dae`, then import the `.dae` into SketchUp. Keep the `.obj`, `.mtl`, and texture PNG together when converting so material links remain valid.
 
 ## More Documentation
 

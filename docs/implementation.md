@@ -67,9 +67,9 @@ The import step is handled in the SketchUp plugin, not the backend, because it n
 
 - `import_render` imports generated PNG files as SketchUp images.
 - `reveal_point_cloud` reveals the generated geometry file locally.
-- `import_point_cloud` imports textured OBJ through SketchUp's generic importer after downloading its `.mtl` and texture sidecars. PLY/LAS/LAZ import never uses generic `model.import`; it only runs through a detected Scan Essentials Ruby import adapter.
+- `import_point_cloud` downloads textured OBJ `.mtl` and texture sidecars before attempting import. PLY/LAS/LAZ import never uses generic `model.import`; it only runs through a detected Scan Essentials Ruby import adapter. SketchUp's native import list does not include OBJ, so OBJ workflows should use a SketchUp OBJ importer extension or conversion to Collada `.dae`.
 
-After `/agent/orchestrate` or `/agent/run` returns artifacts, the chat dialog asks the user whether to import the PNG. For geometry artifacts, the dialog always offers Reveal. PLY/LAS import requires a compatible importer such as Scan Essentials; textured OBJ remains available as an optional mesh format.
+After `/agent/orchestrate` or `/agent/run` returns artifacts, the chat dialog asks the user whether to import the PNG. For geometry artifacts, the dialog always offers Reveal. PLY/LAS import requires a compatible importer such as Scan Essentials; textured OBJ remains available as an optional mesh format with sidecars for external import/conversion.
 
 If Scan Essentials does not expose a concrete Ruby API, `import_point_cloud` reports that direct import is unavailable and asks the user to reveal/import manually.
 
@@ -108,5 +108,6 @@ docker compose run --rm depth-service pytest tests -q
 - In SketchUp, click `Generate Room Renders` after plotting and verify backend logs show `/agent/orchestrate` and `RoomRenderTool` with no preceding `/uploads/viewport`.
 - Confirm the composer shows the `Chat` button and no visible shortcut hint.
 - Reveal the generated geometry file from the plugin dialog.
-- Reveal the generated PLY from the plugin dialog.
+- Reveal the generated PLY or OBJ mesh from the plugin dialog.
+- For textured OBJ output, confirm the `.obj`, `.mtl`, and texture PNG sidecars are downloaded to the same local folder before external import or conversion.
 - If SketchUp Studio Scan Essentials is detected on a supported OS, optional PLY/LAS outputs can be imported manually through Scan Essentials.

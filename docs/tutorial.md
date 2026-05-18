@@ -1,6 +1,6 @@
-# Plugin Tutorial: Floor Plan to Panorama Point Cloud
+# Plugin Tutorial: Floor Plan to Panorama Geometry
 
-This tutorial walks through the example SketchUp workflow shown in the screenshots in `docs/tutorial_asset/`. It covers opening the AI Render Assistant, describing a floor plan, plotting it, generating panorama options, converting the selected panorama into a point cloud, and importing the resulting PLY file.
+This tutorial walks through the example SketchUp workflow shown in the screenshots in `docs/tutorial_asset/`. It covers opening the AI Render Assistant, describing a floor plan, plotting it, generating panorama options, converting the selected panorama into a PLY point cloud or textured OBJ mesh, and bringing the result into SketchUp-compatible tools.
 
 ## Prerequisites
 
@@ -57,19 +57,27 @@ Click `Generate Panorama`. This calls `/generate/panorama` directly with the plo
 
 ![Generate a panorama](tutorial_asset/tutorial_4.jpeg)
 
-## 5. Select a Panorama and Convert It to a Point Cloud
+## 5. Select a Panorama and Convert It to Geometry
 
-Review the two panorama options and choose one. Click the matching `Select ... and Convert point cloud` button. The plugin sends the selected panorama image through the depth pipeline to estimate depth and generate a colored PLY point cloud.
+Review the two panorama options and choose one. Click the matching `Select ... and Convert point cloud` button to generate a colored PLY point cloud. Click `Select ... and Convert mesh` to generate a textured OBJ mesh. Both paths send the selected panorama image through the depth pipeline.
 
 ![Select a panorama and convert it to a point cloud](tutorial_asset/tutorial_5.jpeg)
 
-## 6. Reveal or Import the Point Cloud
+## 6. Reveal or Import the Geometry
 
-When the point-cloud step finishes, the assistant shows the generated PLY path and a depth preview. The plugin always offers `Reveal PLY` so you can find the downloaded point-cloud file on the SketchUp machine.
+When generation finishes, the assistant shows the generated geometry path and a depth preview. The plugin always offers `Reveal PLY` or `Reveal OBJ` so you can find the downloaded files on the SketchUp machine.
+
+For textured OBJ output, keep these files together in the same folder:
+
+```text
+pointcloud_....obj
+pointcloud_....mtl
+pointcloud_..._texture.png
+```
 
 ![Point cloud complete](tutorial_asset/tutorial_6.jpeg)
 
-## 7. Import the PLY Result
+## 7. Import the Result
 
 Direct PLY import depends on SketchUp having a compatible point-cloud importer available, such as Scan Essentials. If the plugin detects a supported local import API, use the import action in the assistant dialog to bring the point cloud into the active SketchUp model.
 
@@ -82,6 +90,11 @@ If direct import is not available, use the manual path:
 
 The message `Direct SketchUp point-cloud import support was not detected` means the PLY file was still generated successfully; it only means the plugin could not find a callable SketchUp import adapter. Use `Reveal PLY` and import the file manually.
 
+SketchUp's native import list does not include OBJ. To use the colored OBJ mesh in SketchUp, use one of these paths:
+
+1. Install an OBJ importer extension for SketchUp and import the `.obj` while the `.mtl` and texture PNG remain beside it.
+2. Open the `.obj` in Blender, export it as Collada `.dae`, then import the `.dae` into SketchUp.
+
 ## Expected Result
 
 At the end of this flow, the backend has generated:
@@ -91,5 +104,6 @@ At the end of this flow, the backend has generated:
 - two panorama PNG options
 - a depth preview for the selected panorama
 - a PLY point-cloud artifact
+- optional textured OBJ mesh artifacts: `.obj`, `.mtl`, and texture PNG
 
 The generated files are stored by the backend under its configured runtime artifact folders and downloaded or revealed through the SketchUp plugin UI as needed.

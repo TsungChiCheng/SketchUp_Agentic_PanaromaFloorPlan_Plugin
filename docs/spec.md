@@ -178,7 +178,7 @@ SketchUp-local import tools are implemented as guarded dialog callbacks because 
 - `ImportPointCloudToSketchUp`
 - `OpenFloorPlanViewer`
 
-After artifact generation, the dialog asks the user whether to import the PNG. For geometry artifacts, the dialog always offers Reveal. PLY/LAS point-cloud import depends on a compatible importer, such as Scan Essentials. Textured OBJ remains available as an optional mesh format and is imported through SketchUp's generic importer with its material sidecars.
+After artifact generation, the dialog asks the user whether to import the PNG. For geometry artifacts, the dialog always offers Reveal. PLY/LAS point-cloud import depends on a compatible importer, such as Scan Essentials. Textured OBJ remains available as an optional mesh format with `.mtl` and texture PNG sidecars, but SketchUp's native import list does not include OBJ; users need an OBJ importer extension or conversion to a SketchUp-supported format such as Collada `.dae`.
 
 The tools are structured so they can later be exposed through an MCP server without changing the endpoint contracts.
 
